@@ -16,7 +16,7 @@ import (
 )
 
 var (
-	errNotCapture = errors.New("not a pcap or pcapng file")                        // errNotCapture is returned by newContainer if the file is not a pcap or pcapng file.
+	ErrNotCapture = errors.New("not a pcap or pcapng file")                        // ErrNotCapture is what NewReader and Open wrap when the bytes are neither.
 	ErrNoLive     = errors.New("capture: live capture needs cgo on this platform") // ErrNoLive is returned by OpenLive and Devices in a build without cgo, outside Windows.
 )
 
@@ -59,7 +59,7 @@ func newContainer(r io.Reader) (container, error) {
 	br := bufio.NewReaderSize(r, 1<<16)
 	magic, err := br.Peek(4)
 	if err != nil {
-		return nil, errNotCapture
+		return nil, ErrNotCapture
 	}
 	if binary.LittleEndian.Uint32(magic) == ngSection {
 		return &pcapng{r: br}, nil

@@ -1,11 +1,9 @@
-package main
+package a2kit
 
 import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"os"
-	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -21,12 +19,12 @@ type traced struct {
 	Args map[string]any
 }
 
-func timeline(t *testing.T, args ...string) []traced {
+func traceOf(t *testing.T, r *Reader) []traced {
 	t.Helper()
-
-	var out, errs bytes.Buffer
-	if code := run(append([]string{"timeline"}, args...), &out, &errs); code != 0 {
-		t.Fatalf("exit %d: %s", code, &errs)
+	defer r.Close()
+	var out bytes.Buffer
+	if err := WriteTrace(&out, r.Messages()); err != nil {
+		t.Fatal(err)
 	}
 	var tr struct {
 		DisplayTimeUnit string
@@ -38,7 +36,7 @@ func timeline(t *testing.T, args ...string) []traced {
 	return tr.TraceEvents
 }
 
-func fight(t *testing.T, lines ...string) string {
+func logOf(t *testing.T, cfg Config, lines ...string) *Reader {
 	t.Helper()
 	var b strings.Builder
 	b.WriteString(`{"schema":"a2log/v0.1","decoder":"github.com/nuriland/a2kit@test","source":{"kind":"pcap","path":"fight.pcap"},"t0":"2026-09-23T18:00:00.123Z"}` + "\n")
@@ -52,11 +50,11 @@ func fight(t *testing.T, lines ...string) string {
 		}
 		fmt.Fprintf(&b, `{"t":%d,"opcode":"%s %s","flags":[%q],"src":"10.0.0.2:13328","dst":"10.0.0.1:10000","payload":%q}`+"\n", ms, lo, hi, from, payload)
 	}
-	name := filepath.Join(t.TempDir(), "fight.jsonl")
-	if err := os.WriteFile(name, []byte(b.String()), 0o644); err != nil {
+	r, err := OpenReader(strings.NewReader(b.String()), cfg)
+	if err != nil {
 		t.Fatal(err)
 	}
-	return name
+	return r
 }
 
 // tracks lists the names of pid's tracks, in tid order.
@@ -71,7 +69,7 @@ func tracks(evs []traced, pid int) []string {
 }
 
 func TestFight(t *testing.T) {
-	evs := timeline(t, fight(t,
+	evs := traceOf(t, logOf(t, Config{},
 		"0 02 38 server x3wA4CaoAAAA9aMCAAAAAAAAAAAAAAAAAAAAAA==",   // 15943 casts Keen Strike
 		"5 04 38 server x3wEAPWjAuAmqAAAAkvtn0EBAAAAkE4kAQA=",       // 37365 hits 15943
 		"12 05 38 server x3wC9aMCAOAmqAAk",                          // unread
@@ -116,7 +114,7 @@ func TestFight(t *testing.T) {
 }
 
 func TestNames(t *testing.T) {
-	evs := timeline(t, "-client", fight(t,
+	evs := traceOf(t, logOf(t, Config{Client: true},
 		"0 45 36 server 5HIBIAAABwZQbGF5ZXI=",                 // 14692 is Player
 		"1 04 8D server 9aMCYEGuAMd8+AMHUGxheWVyMg==",         // 37365 is owned by 15943, Player2
 		"2 45 36 server x3wBIAAABg==",                         // 15943 again, without a name
@@ -141,7 +139,11 @@ func TestNames(t *testing.T) {
 }
 
 func TestCapture(t *testing.T) {
-	evs := timeline(t, "../../capture/testdata/sample.pcap")
+	r, err := Open("capture/testdata/sample.pcap", Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	evs := traceOf(t, r)
 	var ts []int64
 	for _, e := range evs {
 		if e.PID == byOpcode && e.Ph == "i" {

@@ -9,7 +9,7 @@ import (
 )
 
 func list(w io.Writer) {
-	fmt.Fprint(w, "a2k is a Passive AION 2 protocol decoder and analysis toolkit. It readsAION 2's network traffic.\n\n")
+	fmt.Fprint(w, "a2k reads AION 2's network traffic and decodes the server's messages\n\n")
 	fmt.Fprint(w, "usage: a2k COMMAND [flags] [FILE]\n\n")
 	tw := tabwriter.NewWriter(w, 0, 0, 3, ' ', 0)
 	for _, c := range commands {

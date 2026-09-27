@@ -31,7 +31,7 @@ type classic struct {
 func newClassic(r *bufio.Reader) (*classic, error) {
 	var h [24]byte
 	if _, err := io.ReadFull(r, h[:]); err != nil {
-		return nil, errNotCapture
+		return nil, ErrNotCapture
 	}
 	p := &classic{r: r}
 	for _, order := range []binary.ByteOrder{binary.LittleEndian, binary.BigEndian} {
@@ -43,7 +43,7 @@ func newClassic(r *bufio.Reader) (*classic, error) {
 		}
 	}
 	if p.order == nil {
-		return nil, errNotCapture
+		return nil, ErrNotCapture
 	}
 	p.linkType = int(p.order.Uint32(h[20:]) & 0x03FFFFFF) // the upper bits say other things
 	return p, nil

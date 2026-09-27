@@ -1,7 +1,6 @@
 package main
 
 import (
-	"errors"
 	"flag"
 	"path/filepath"
 
@@ -18,34 +17,37 @@ to share, and a newer a2k decodes more of it. a2k show reads it back.
 
   a2k export fight.pcap -o fight.jsonl`,
 	define: func(fs *flag.FlagSet, o *options) func([]string) error {
-		o.decoding(fs)
-		o.file(fs)
-		o.output(fs)
+		o.clientFlag(fs)
+		o.verboseFlag(fs)
+		o.streamFlag(fs)
+		o.outputFlag(fs)
 		return func(args []string) error {
 			name, err := one(args, "FILE")
 			if err != nil {
 				return err
 			}
-			s, err := o.openFile(name)
+			r, err := o.open(name)
 			if err != nil {
 				return err
-			}
-			if s.kind == "log" {
-				s.Close()
-				return errors.New(name + " is an exported log already")
 			}
 			out, err := o.openOutput(false)
 			if err != nil {
-				s.Close()
-				return err
+				return finish(o, r, nil, err)
 			}
 			// The log names the file, not where it is, since it is what gets shared.
-			lg := a2log.NewWriter(out, a2log.Source{Kind: s.kind, Path: filepath.Base(s.path)})
-			t, err := drain(s, func(r reading) error { return lg.Write(r.Frame) })
-			if err == nil {
-				err = lg.Close()
-			}
-			return finish(o, s, out, t, err)
+			lg := a2log.NewWriter(out, a2log.Source{Kind: r.Source.Kind, Path: filepath.Base(r.Source.Path)})
+			err = func() error {
+				for m, err := range r.Messages() {
+					if err != nil {
+						return err
+					}
+					if err := lg.Write(m.Frame); err != nil {
+						return err
+					}
+				}
+				return lg.Close()
+			}()
+			return finish(o, r, out, err)
 		}
 	},
 }

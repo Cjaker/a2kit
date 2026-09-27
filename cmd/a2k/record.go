@@ -14,16 +14,16 @@ var recordCommand = command{
 	name:  "record",
 	args:  "[flags] [FILE]",
 	short: "save the game's session",
-	long: `Record saves the session until Ctrl-C or -for. It says when it finds the game's connection. Needs admin (root)privileges.
+	long: `Record saves the session until Ctrl-C or -for. It says when it finds the game's connection. Needs admin (root) privileges.
 
   a2k record fight.pcap                              a recording: all the adapter's TCP traffic
   a2k record -log fight.jsonl                        a log: the game's messages only
   a2k record -log fight.jsonl -for 30m fight.pcap    a log for 30 minutes and a recording`,
 	define: func(fs *flag.FlagSet, o *options) func([]string) error {
-		o.live(fs)
+		o.liveFlags(fs)
 		fs.StringVar(&o.log, "log", "", "write the game's messages to `file`, a log; - is stdout")
-		fs.BoolVar(&o.client, "client", false, "include the game client's messages in the log, which are encrypted")
-		fs.BoolVar(&o.verbose, "v", false, "log what the decoder does to stderr")
+		o.clientFlag(fs)
+		o.verboseFlag(fs)
 		return func(args []string) error {
 			switch {
 			case len(args) > 1:
@@ -41,16 +41,16 @@ var recordCommand = command{
 	},
 }
 
+// record writes the live session to the recording, the log, or both.
 func record(o *options) error {
-	s, err := o.openLive()
+	r, err := o.capture()
 	if err != nil {
 		return err
 	}
 	var lg *a2log.Writer
 	if o.log != "" {
-		if lg, err = o.openLog(s); err != nil {
-			s.Close()
-			return err
+		if lg, err = o.openLog(r.Source); err != nil {
+			return finish(o, r, nil, err)
 		}
 	}
 	var to []string
@@ -66,19 +66,27 @@ func record(o *options) error {
 	}
 	fmt.Fprintf(o.stderr, "a2k: recording to %s %s\n", strings.Join(to, " and "), until(o))
 	var server netip.AddrPort
-	t, err := drain(s, func(r reading) error {
-		if r.Flags&wire.FromServer != 0 && r.Src != server { // the first message of a lock
-			server = r.Src
-			fmt.Fprintln(o.stderr, "a2k: found the game at", server)
+	err = func() error {
+		for m, err := range r.Messages() {
+			if err != nil {
+				return err
+			}
+			if m.Flags&wire.FromServer != 0 && m.Src != server { // the first message of a lock
+				server = m.Src
+				fmt.Fprintln(o.stderr, "a2k: found the game at", server)
+			}
+			if lg != nil {
+				if err := lg.Write(m.Frame); err != nil {
+					return err
+				}
+			}
 		}
-		if lg == nil {
-			return nil
-		}
-		return lg.Write(r.Frame)
-	})
-	return finish(o, s, nil, t, err)
+		return nil
+	}()
+	return finish(o, r, nil, err)
 }
 
+// until says when a live capture stops.
 func until(o *options) string {
 	if o.dur > 0 {
 		return fmt.Sprint("for ", o.dur)
