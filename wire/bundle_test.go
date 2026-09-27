@@ -98,6 +98,16 @@ func TestBundleSize(t *testing.T) {
 	t.Logf("%d bytes from a %d-byte block, %.0f times", len(zeros), len(b)-9, float64(len(zeros))/float64(len(b)-9))
 }
 
+func TestPlainLimit(t *testing.T) {
+	for size, want := range map[int]string{maxPlain: "04 38 len=3 lz4,bundled\n", maxPlain + 1: ""} {
+		plain := make([]byte, size)
+		copy(plain, wiretest.AppendFrame(nil, 0x04, 0x38, 3))
+		d := NewDecoder(Config{})
+		feed(d, wiretest.AppendBundle(nil, plain))
+		expect(t, d, want)
+	}
+}
+
 // An FF FF body too short to be a bundle is dropped, and an untrusted stream does not take it for
 // one.
 func TestShortBundle(t *testing.T) {

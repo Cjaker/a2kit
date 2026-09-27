@@ -18,6 +18,7 @@ jobs:
       matrix:
         include:
           - { pkg: ./wire, fuzz: FuzzFeed }
+          - { pkg: ./wire, fuzz: FuzzSegments }
           - { pkg: ./wire, fuzz: FuzzRoundTrip }
           - { pkg: ./capture, fuzz: FuzzReader }
           - { pkg: ./game, fuzz: FuzzParse }
