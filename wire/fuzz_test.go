@@ -35,6 +35,14 @@ func bounded(t *testing.T, d *Decoder) {
 		if len(st.fr.buf) > maxBuf+3 || len(st.fr.plain) != 0 {
 			t.Fatalf("%v buffers %d bytes, %d of plaintext", st.key, len(st.fr.buf), len(st.fr.plain))
 		}
+
+		early := 0
+		for _, f := range st.early {
+			early += len(f.Payload)
+		}
+		if len(st.early) > maxEarly || early > maxEarlyBytes || early != st.earlyBytes || len(st.early) > 0 && st.dir != 0 {
+			t.Fatalf("%v, direction %v, keeps %d early frames of %d bytes, counted as %d", st.key, st.dir, len(st.early), early, st.earlyBytes)
+		}
 		held += len(st.held)
 		if !st.closed.IsZero() {
 			closing++
@@ -227,6 +235,11 @@ func FuzzSegments(f *testing.F) {
 		if d.held != 0 {
 			t.Fatalf("%d segments held after Flush", d.held)
 		}
+		for _, st := range d.streams {
+			if len(st.early) > 0 {
+				t.Fatalf("%v keeps %d early frames after Flush", st.key, len(st.early))
+			}
+		}
 	})
 }
 
@@ -274,7 +287,7 @@ func FuzzRoundTrip(f *testing.F) {
 			stream = slices.Concat(stream[:3], enveloped(rest, size))
 		}
 
-		d := NewDecoder(Config{ParseTLS: true}) // TLS is judged per segment, and these are not segments
+		d := NewDecoder(Config{ParseTLS: true, EmitUnlocked: true}) // TLS is judged per segment, and these are not segments
 		x := uint32(piece)
 		for p := stream; len(p) > 0; {
 			x = x*1664525 + 1013904223

@@ -23,14 +23,14 @@ const threeWant = "04 38 len=41 lz4,bundled\n" +
 	"1B 92 len=200 lz4,bundled\n"
 
 func TestBundle(t *testing.T) {
-	d := NewDecoder(Config{})
+	d := NewDecoder(Config{EmitUnlocked: true})
 	feed(d, wiretest.AppendBundle(nil, three()))
 	expect(t, d, threeWant)
 }
 
 // A flag byte from F0 to FE may come before the FF FF.
 func TestFlagged(t *testing.T) {
-	d := NewDecoder(Config{})
+	d := NewDecoder(Config{EmitUnlocked: true})
 	feed(d, wiretest.AppendFlagged(nil, 0xF2, three()))
 	expect(t, d, threeWant)
 }
@@ -38,7 +38,7 @@ func TestFlagged(t *testing.T) {
 func TestNested(t *testing.T) {
 	inner := slices.Concat(wiretest.AppendFrame(nil, 0x05, 0x38, 20), wiretest.AppendFrame(nil, 0x44, 0x36, 12))
 	plain := wiretest.AppendBundle(wiretest.AppendFrame(nil, 0x04, 0x38, 8), inner)
-	d := NewDecoder(Config{})
+	d := NewDecoder(Config{EmitUnlocked: true})
 	feed(d, wiretest.AppendBundle(nil, plain))
 	expect(t, d, "04 38 len=8 lz4,bundled\n05 38 len=20 lz4,bundled\n44 36 len=12 lz4,bundled\n")
 }
@@ -50,7 +50,7 @@ func TestDepth(t *testing.T) {
 			for range depth {
 				p = wiretest.AppendBundle(nil, p)
 			}
-			d := NewDecoder(Config{})
+			d := NewDecoder(Config{EmitUnlocked: true})
 			feed(d, p)
 			expect(t, d, want)
 		})
@@ -73,7 +73,7 @@ func TestBrokenBundle(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			bad := slices.Clone(good)
 			spoil(bad)
-			d := NewDecoder(Config{})
+			d := NewDecoder(Config{EmitUnlocked: true})
 			feed(d, bad)
 			feed(d, wiretest.AppendFrame(nil, 0x05, 0x38, 1))
 			expect(t, d, "05 38 len=1 -\n")
@@ -84,7 +84,7 @@ func TestBrokenBundle(t *testing.T) {
 // A size the block cannot produce is refused without allocating, and a block that compresses
 // that well still opens.
 func TestBundleSize(t *testing.T) {
-	d := NewDecoder(Config{})
+	d := NewDecoder(Config{EmitUnlocked: true})
 	feed(d, []byte{0x0D, 0xFF, 0xFF, 0x00, 0x00, 0x7A, 0x00, 1, 2, 3, 4, 5, 6}) // 8 MB, from a 3-byte block
 	if st := d.streams[key{src: srv, dst: cli}]; cap(st.fr.plain) != 0 {
 		t.Errorf("%d bytes set aside for it", cap(st.fr.plain))
@@ -92,7 +92,7 @@ func TestBundleSize(t *testing.T) {
 
 	zeros := slices.Concat(binary.AppendUvarint(nil, 2+60000+4), []byte{0x04, 0x38}, make([]byte, 60000))
 	b := wiretest.AppendBundle(nil, zeros)
-	d = NewDecoder(Config{})
+	d = NewDecoder(Config{EmitUnlocked: true})
 	feed(d, b)
 	expect(t, d, "04 38 len=60000 lz4,bundled\n")
 	t.Logf("%d bytes from a %d-byte block, %.0f times", len(zeros), len(b)-9, float64(len(zeros))/float64(len(b)-9))
@@ -102,7 +102,7 @@ func TestPlainLimit(t *testing.T) {
 	for size, want := range map[int]string{maxPlain: "04 38 len=3 lz4,bundled\n", maxPlain + 1: ""} {
 		plain := make([]byte, size)
 		copy(plain, wiretest.AppendFrame(nil, 0x04, 0x38, 3))
-		d := NewDecoder(Config{})
+		d := NewDecoder(Config{EmitUnlocked: true})
 		feed(d, wiretest.AppendBundle(nil, plain))
 		expect(t, d, want)
 	}
@@ -112,12 +112,12 @@ func TestPlainLimit(t *testing.T) {
 // one.
 func TestShortBundle(t *testing.T) {
 	short := []byte{0x07, 0xFF, 0xFF, 0x00}
-	d := NewDecoder(Config{})
+	d := NewDecoder(Config{EmitUnlocked: true})
 	tick := wiretest.AppendFrame(nil, 0x00, 0x36, 2)
 	feed(d, slices.Concat(tick, tick, short, wiretest.AppendFrame(nil, 0x05, 0x38, 1)))
 	expect(t, d, "00 36 len=2 -\n00 36 len=2 -\n05 38 len=1 -\n")
 
-	d = NewDecoder(Config{})
+	d = NewDecoder(Config{EmitUnlocked: true})
 	feed(d, slices.Concat(short, wiretest.AppendFrame(nil, 0x05, 0x38, 1)))
 	expect(t, d, "05 38 len=1 resynced\n")
 }

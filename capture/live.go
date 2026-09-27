@@ -6,7 +6,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/netip"
 	"runtime"
+	"slices"
+	"strings"
 	"time"
 
 	"github.com/gopacket/gopacket/pcap"
@@ -32,8 +35,7 @@ type Live struct {
 	link int
 }
 
-// OpenLive with no name takes the first device that is up, has an address, is
-// not a loopback, and is not known to be disconnected. It needs root or the access_bpf group on macOS.
+// OpenLive with no name takes the device Devices lists first. It needs root or the access_bpf group on macOS
 func OpenLive(name string) (*Live, error) {
 	if name == "" {
 		var err error
@@ -65,6 +67,9 @@ func OpenLive(name string) (*Live, error) {
 
 	h, err := in.Activate()
 	if err != nil {
+		if strings.Contains(err.Error(), "Permission Denied") {
+			return nil, fmt.Errorf("capture: %s: %w; run as root, or on macOS join the access_bpf group", name, err)
+		}
 		return nil, fmt.Errorf("capture: %s: %w", name, err)
 	}
 	if err := h.SetBPFFilter("tcp"); err != nil {
@@ -77,7 +82,7 @@ func OpenLive(name string) (*Live, error) {
 // ReadSegment waits for a segment, and returns io.EOF once closed.
 func (l *Live) ReadSegment() (wire.Segment, error) {
 	for {
-		data, ci, err := l.h.ZeroCopyReadPacketData()
+		data, ci, err := l.h.ReadPacketData()
 		if err == pcap.NextErrorTimeoutExpired {
 			continue
 		}
@@ -125,29 +130,42 @@ func (l *Live) Close() error {
 	return nil
 }
 
+// Lost reports what a closed capture lost without failing. libpcap does not say.
+func (l *Live) Lost() error { return nil }
+
 // defaultDevice is the device OpenLive opens when none is named.
 func defaultDevice() (string, error) {
-	ifs, err := pcap.FindAllDevs()
+	devs, err := Devices()
 	if err != nil {
-		return "", fmt.Errorf("capture: %w", err)
+		return "", err
 	}
-	for _, in := range ifs {
-		if in.Flags&ifUp != 0 && in.Flags&ifLoopback == 0 && in.Flags&ifStatus != ifDisconnected && len(in.Addresses) > 0 {
-			return in.Name, nil
-		}
+	if len(devs) == 0 || !devs[0].Default {
+		return "", errors.New("capture: no device is up")
 	}
-	return "", errors.New("capture: no device is up")
+	return devs[0].Name, nil
 }
 
-// Devices lists the devices that can be captured.
+// Devices lists the devices that can be captured, the default first.
 func Devices() ([]Device, error) {
 	ifs, err := pcap.FindAllDevs()
 	if err != nil {
 		return nil, fmt.Errorf("capture: %w", err)
 	}
-	devs := make([]Device, len(ifs))
-	for i, in := range ifs {
-		devs[i] = Device{Name: in.Name, Description: in.Description}
+	var ds []Device
+	for _, in := range ifs {
+		d := Device{Name: in.Name, Description: in.Description}
+		if len(ds) == 0 || !ds[0].Default {
+			routable := slices.ContainsFunc(in.Addresses, func(a pcap.InterfaceAddress) bool {
+				ip, ok := netip.AddrFromSlice(a.IP)
+				return ok && !ip.Unmap().IsLinkLocalUnicast()
+			})
+			d.Default = in.Flags&ifUp != 0 && in.Flags&ifLoopback == 0 && in.Flags&ifStatus != ifDisconnected && routable
+		}
+		if d.Default {
+			ds = append([]Device{d}, ds...)
+			continue
+		}
+		ds = append(ds, d)
 	}
-	return devs, nil
+	return ds, nil
 }

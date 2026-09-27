@@ -19,7 +19,7 @@ import (
 // decode reads a whole capture through a fresh decoder.
 func decode(r wire.SegmentReader) ([]wire.Frame, error) {
 	var fs []wire.Frame
-	for f, err := range wire.NewDecoder(wire.Config{}).Decode(r) {
+	for f, err := range wire.NewDecoder(wire.Config{EmitUnlocked: true}).Decode(r) {
 		if err != nil {
 			return fs, err
 		}
@@ -28,8 +28,7 @@ func decode(r wire.SegmentReader) ([]wire.Frame, error) {
 	return fs, nil
 }
 
-// lines prints frames as a2kit dump does, a line each, and without their
-// timestamps if timeless is set.
+// lines prints frames a line each, as Frame.String does, and without their timestamps if timeless is set.
 func lines(fs []wire.Frame, timeless bool) string {
 	var b strings.Builder
 	for _, f := range fs {

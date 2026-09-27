@@ -1,12 +1,24 @@
 package wire
 
-import "log/slog"
+import (
+	"bytes"
+	"encoding/binary"
+	"log/slog"
+	"slices"
+
+	"github.com/pierrec/lz4/v4"
+)
 
 const (
 	maxFrame        = 1 << 20 // the longest frame, varint included
 	maxBuf          = 1 << 20 // the most a stream buffers
 	probationFrames = 2       // frames after a resync that still get the untrusted rules
 	stallLimit      = 1 << 14 // the longest incomplete frame an untrusted stream waits for
+
+	maxDepth  = 4       // nesting levels
+	maxPlain  = 8000000 // plaintext across all nesting levels
+	minBundle = 7       // FF FF, a u32 size, and a block of at least one byte
+	maxGrowth = 255     // the largest ratio of LZ4 output to input
 )
 
 // verdict answers a question that the bytes so far may not settle.
@@ -31,6 +43,7 @@ type framer struct {
 	probation int       // frames left before the stream is trusted again
 	skipped   int       // bytes skipped since the last frame
 	resync    bool      // the next frame is flagged Resynced
+	resyncs   int       // times the stream found its place again
 	plain     []byte    // bundle plaintext, a stack shared by nesting levels
 	env       envelopes // envelope state
 
@@ -134,6 +147,7 @@ loop:
 			if f.skipped > 0 {
 				f.log.Info("resynced", "skipped", f.skipped)
 				f.skipped, f.resync, f.probation = 0, true, probationFrames
+				f.resyncs++
 			} else if f.probation > 0 {
 				f.probation--
 			}
@@ -322,4 +336,85 @@ func (f *framer) walk(p []byte, depth int, flags Flags) {
 		f.parse(p[head:n], depth, flags)
 		p = p[n:]
 	}
+}
+
+// unwrap decompresses FF FF | u32le size | lz4 block and parses the frames inside
+func (f *framer) unwrap(body []byte, depth int, flags Flags) bool {
+	var size uint32
+	if len(body) >= minBundle {
+		size = binary.LittleEndian.Uint32(body[2:])
+	}
+	if depth >= maxDepth || size == 0 || uint64(size) > maxGrowth*uint64(len(body)-6) || size > uint32(maxPlain-len(f.plain)) {
+		f.log.Warn("bundle refused", "size", size, "depth", depth)
+		return false
+	}
+
+	base := len(f.plain)
+	f.plain = slices.Grow(f.plain, int(size))[:base+int(size)]
+	out := f.plain[base:]
+
+	n, err := lz4.UncompressBlock(body[6:], out)
+	if err != nil || n != int(size) {
+		f.log.Warn("bundle corrupt", "size", size, "got", n, "err", err)
+		f.plain = f.plain[:base]
+		return false
+	}
+
+	f.walk(out, depth+1, flags|WasLZ4|WasBundled)
+	f.plain = f.plain[:base]
+	return true
+}
+
+// envelope reports whether an envelope begins at p, it has to have a believable length followed by a plausible frame,
+// in bytes that do not begin a plausible frame themselves.
+func (f *framer) envelope(p []byte, afterFrame bool) verdict {
+	h := [4]byte{}
+	n := copy(h[:], p)
+	switch l := binary.LittleEndian.Uint32(h[:]); {
+	case l > maxEnvelope, n == 4 && l < minEnvelope:
+		return no
+	case n < 4:
+		return maybe
+	}
+	if f.begins(bytes.TrimLeft(p, "\x00")) == yes {
+		return no
+	}
+	if v := f.accepts(p[4:]); v != yes || afterFrame {
+		return v
+	}
+	return chain(p, 0, stallLimit)
+}
+
+// strip removes the headers
+func (f *framer) strip(from int) {
+	out, over := f.env.strip(f.buf[from:])
+	f.buf = append(f.buf[:from], out...)
+	if over {
+		f.log.Warn("envelopes ended")
+		f.aligned = false
+	}
+}
+
+// refind searches the raw bytes since a lost header for three believable headers in a row, one envelope apart.
+func (f *framer) refind() bool {
+	e := &f.env
+	h, found := e.search.find(0, len(f.buf)-3, func(h int) verdict {
+		if !believable(binary.LittleEndian.Uint32(f.buf[h:])) {
+			return no
+		}
+		return chain(f.buf, h, maxBuf)
+	})
+	switch {
+	case found:
+		f.log.Info("envelopes found again", "at", h)
+		e.lost, e.left = false, h
+		e.search.reset()
+		f.strip(0)
+		return true
+	case len(f.buf) < maxBuf:
+		return false
+	}
+	f.log.Warn("envelopes given up")
+	*e = envelopes{}
+	return true
 }

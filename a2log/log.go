@@ -1,8 +1,16 @@
-// Package a2log is the fight log that dump -log writes: a Header line, then one Frame a line, each a JSON object.
+// Package a2log is the fight log: a Header line, then one Frame a line, each a JSON object.
+// It keeps the game's frames raw, so that a newer game package reads more of an old log.
+// NewWriter writes one, and NewReader reads one back, as wire.Frames for game.Parse.
 package a2log
 
 import (
+	"encoding/json"
+	"fmt"
+	"io"
+	"iter"
 	"net/netip"
+	"runtime/debug"
+	"strings"
 	"time"
 
 	"github.com/nuriland/a2kit/wire"
@@ -54,5 +62,100 @@ func (f Frame) Wire(t0 time.Time) wire.Frame {
 		Opcode:  f.Opcode,
 		Flags:   f.Flags,
 		Payload: f.Payload,
+	}
+}
+
+type Writer struct {
+	w     io.Writer
+	hdr   Header
+	begun bool
+}
+
+func NewWriter(w io.Writer, src Source) *Writer {
+	return &Writer{w: w, hdr: Header{Schema: Schema, Decoder: module(), Source: src}}
+}
+
+func (w *Writer) Write(f wire.Frame) error {
+	if !w.begun {
+		w.hdr.T0 = f.Time.UTC()
+		if err := w.line(w.hdr); err != nil {
+			return err
+		}
+		w.begun = true
+	}
+	return w.line(NewFrame(f, w.hdr.T0))
+}
+
+func (w *Writer) Close() error {
+	if w.begun {
+		return nil
+	}
+	w.begun = true
+	return w.line(w.hdr)
+}
+
+func (w *Writer) line(v any) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+	_, err = w.w.Write(append(b, '\n'))
+	return err
+}
+
+// module is the a2kit module and version this build holds: the main module's, or, in a program
+// that imports a2kit, the dependency's.
+//
+// @REVIEW: added for UX, but I doubt it's useful.
+func module() string {
+	const path = "github.com/nuriland/a2kit"
+	bi, ok := debug.ReadBuildInfo()
+	if !ok {
+		return path + "@(unknown)"
+	}
+	if bi.Main.Path == path {
+		return path + "@" + bi.Main.Version
+	}
+	for _, m := range bi.Deps {
+		if m.Path == path {
+			return path + "@" + m.Version
+		}
+	}
+	return path + "@(unknown)"
+}
+
+type Reader struct {
+	dec *json.Decoder
+	hdr Header
+}
+
+func NewReader(r io.Reader) (*Reader, error) {
+	var (
+		hdr Header
+		dec = json.NewDecoder(r)
+	)
+	if err := dec.Decode(&hdr); err != nil {
+		return nil, fmt.Errorf("a2log: not a log: %w", err)
+	}
+	if !strings.HasPrefix(hdr.Schema, "a2log/") {
+		return nil, fmt.Errorf("a2log: not a log: its schema is %q", hdr.Schema)
+	}
+	return &Reader{dec: dec, hdr: hdr}, nil
+}
+
+func (r *Reader) Header() Header { return r.hdr }
+
+func (r *Reader) Frames() iter.Seq2[wire.Frame, error] {
+	return func(yield func(wire.Frame, error) bool) {
+		for r.dec.More() {
+			var f Frame
+			if err := r.dec.Decode(&f); err != nil {
+				yield(wire.Frame{}, fmt.Errorf("a2log: %w", err))
+				return
+			}
+			if !yield(f.Wire(r.hdr.T0), nil) {
+				return
+			}
+		}
 	}
 }

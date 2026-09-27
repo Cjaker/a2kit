@@ -1,9 +1,11 @@
 package a2log
 
 import (
+	"bytes"
 	"encoding/json"
 	"net/netip"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -69,5 +71,94 @@ func TestReadRejects(t *testing.T) {
 	}
 	if err := json.Unmarshal([]byte(`{"flags":["server","later"]}`), &f); err != nil || f.Flags != wire.FromServer {
 		t.Errorf("a flag the reader does not know: got %v, %v", f.Flags, err)
+	}
+}
+
+type lines struct {
+	bytes.Buffer
+	writes int
+}
+
+func (l *lines) Write(p []byte) (int, error) {
+	l.writes++
+	return l.Buffer.Write(p)
+}
+
+func TestWriterReader(t *testing.T) {
+	t0 := time.Date(2026, 9, 23, 18, 0, 0, 123e6, time.UTC)
+	frames := []wire.Frame{
+		{Time: t0, Src: server, Dst: client, Opcode: 0x3804, Flags: wire.FromServer, Payload: []byte{1, 2, 3}},
+		{Time: t0.Add(51 * time.Millisecond), Src: server, Dst: client, Opcode: 0x3633, Flags: wire.FromServer | wire.WasLZ4, Payload: []byte{}},
+		{Time: t0.Add(-1 * time.Millisecond), Src: server, Dst: client, Opcode: 0x3805, Flags: wire.FromServer, Payload: []byte{4}},
+	}
+	var out lines
+	w := NewWriter(&out, Source{Kind: "pcap", Path: "fight.pcap"})
+	for _, f := range frames {
+		if err := w.Write(f); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if out.writes != 1+len(frames) {
+		t.Errorf("%d writes for %d lines", out.writes, 1+len(frames))
+	}
+
+	r, err := NewReader(&out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if h := r.Header(); h.Schema != Schema || h.Source != (Source{"pcap", "fight.pcap"}) || !h.T0.Equal(t0) || !strings.HasPrefix(h.Decoder, "github.com/nuriland/a2kit@") {
+		t.Errorf("header %+v", h)
+	}
+	var got []wire.Frame
+	for f, err := range r.Frames() {
+		if err != nil {
+			t.Fatal(err)
+		}
+		got = append(got, f)
+	}
+	if !reflect.DeepEqual(got, frames) {
+		t.Errorf("read back\n%+v\nwant\n%+v", got, frames)
+	}
+}
+
+func TestEmptyLog(t *testing.T) {
+	var out bytes.Buffer
+	if err := NewWriter(&out, Source{Kind: "live"}).Close(); err != nil {
+		t.Fatal(err)
+	}
+	r, err := NewReader(&out)
+	if err != nil {
+		t.Fatalf("%v: %s", err, out.Bytes())
+	}
+	for range r.Frames() {
+		t.Error("a frame in an empty log")
+	}
+	if !r.Header().T0.IsZero() {
+		t.Errorf("T0 %v in a log with no frames", r.Header().T0)
+	}
+}
+
+func TestReaderRejects(t *testing.T) {
+	for _, in := range []string{"", "not json", `{"schema":"other/v1"}`} {
+		if _, err := NewReader(strings.NewReader(in)); err == nil {
+			t.Errorf("NewReader(%q) took it", in)
+		}
+	}
+	r, err := NewReader(strings.NewReader(`{"schema":"a2log/v0.2"}` + "\n" + `{"t":0,"opcode":"04 38"}` + "\n" + `{"opcode":"0438"}`))
+	if err != nil {
+		t.Fatalf("a newer schema: %v", err)
+	}
+	n := 0
+	for _, err := range r.Frames() {
+		n++
+		if n == 2 && err == nil {
+			t.Error("no error for a line that is not a frame")
+		}
+	}
+	if n != 2 {
+		t.Errorf("%d yields, want a frame and then the error", n)
 	}
 }

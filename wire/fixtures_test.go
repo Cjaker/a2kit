@@ -45,7 +45,7 @@ func TestFixtures(t *testing.T) {
 		want := expected(t, strings.TrimSuffix(path, ".bin")+".expect.json")
 
 		t.Run(name+"/whole", func(t *testing.T) {
-			d := NewDecoder(Config{})
+			d := NewDecoder(Config{EmitUnlocked: true})
 			feed(d, p)
 			expectDir(t, d, want)
 		})
@@ -53,7 +53,7 @@ func TestFixtures(t *testing.T) {
 			continue // a TLS record is spotted per segment, so its header must come in one
 		}
 		t.Run(name+"/bytes", func(t *testing.T) {
-			d := NewDecoder(Config{})
+			d := NewDecoder(Config{EmitUnlocked: true})
 			for i := range p {
 				feed(d, p[i:i+1])
 			}
@@ -62,7 +62,7 @@ func TestFixtures(t *testing.T) {
 		t.Run(name+"/pieces", func(t *testing.T) {
 			for seed := range uint64(50) {
 				r := rand.New(rand.NewPCG(seed, 0))
-				d := NewDecoder(Config{})
+				d := NewDecoder(Config{EmitUnlocked: true})
 				for rest := p; len(rest) > 0; {
 					n := min(len(rest), 1+r.IntN(23))
 					feed(d, rest[:n])

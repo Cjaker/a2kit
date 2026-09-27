@@ -51,7 +51,7 @@ func Devices() ([]Device, error) {
 	if err != nil {
 		return nil, err
 	}
-	devs := []Device{{Name: "nics", Description: "all network adapters"}}
+	devs := []Device{{Name: "nics", Description: "all network adapters", Default: true}}
 	for _, a := range as {
 		devs = append(devs, Device{Name: strconv.Itoa(a.id), Description: a.name + " (" + a.mac.String() + ")"})
 	}

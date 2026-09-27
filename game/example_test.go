@@ -1,7 +1,6 @@
 package game_test
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
@@ -18,22 +17,20 @@ func Example() {
 {"t":40,"opcode":"04 38","flags":["server"],"src":"10.0.0.2:13328","dst":"10.0.0.1:10000","payload":"x3wEAPWjAuAmqAAAAks="}
 {"t":51,"opcode":"42 36","flags":["server"],"src":"10.0.0.2:13328","dst":"10.0.0.1:10000","payload":"x3wAAw=="}
 `)
-	dec := json.NewDecoder(r)
-	var hdr a2log.Header
-	if err := dec.Decode(&hdr); err != nil {
+	lg, err := a2log.NewReader(r)
+	if err != nil {
 		log.Fatal(err)
 	}
-	for dec.More() {
-		var line a2log.Frame
-		if err := dec.Decode(&line); err != nil {
+	for f, err := range lg.Frames() {
+		if err != nil {
 			log.Fatal(err)
 		}
-		e, err := game.Parse(line.Wire(hdr.T0))
+		e, err := game.Parse(f)
 		switch {
 		case errors.Is(err, game.ErrUnread):
-			continue // an opcode game does not read yet
+			continue // a type game does not read yet
 		case err != nil:
-			fmt.Println(line.Opcode, err) // bytes off the layout; many after a game patch
+			fmt.Println(f.Opcode, err) // bytes off the layout; many after a game patch
 			continue
 		}
 		switch e := e.(type) {

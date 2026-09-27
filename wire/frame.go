@@ -32,7 +32,7 @@ type Frame struct {
 	Payload  []byte // after the opcode
 }
 
-// String is the line a2kit dump prints:
+// Returns the stringified frame in a line:
 //
 //	ts=1700000000006000000 opcode=04 38 len=41 flags=server src=10.0.0.2:13328 dst=10.0.0.1:10000
 func (f Frame) String() string {

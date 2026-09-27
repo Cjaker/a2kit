@@ -2,40 +2,40 @@ package game
 
 import "github.com/nuriland/a2kit/wire"
 
-// op is what the table knows of an opcode: its name, and how to read it, or nil for one seen but not read.
+// op is what the table knows of an opcode: its name, and the function that reads it, or nil for one seen but not read.
 type op struct {
 	name string
 	read func(*reader) Event
 }
 
-// opcodes is every opcode game has a name for.
-//
 // @TODO: add more opcodes
+
+// opcodes is every opcode game has a name for.
 var opcodes = map[wire.Opcode]op{
 	// 36: the login, the world, and its clocks
-	0x3600: {"Tick", (*reader).tick},
-	0x3603: {"Ping", (*reader).ping},
+	0x3600: {"Tick", tick},
+	0x3603: {"Ping", ping},
 	0x3611: {"Handshake", nil}, // a login's first frame
 	0x3615: {"Login", nil},     // the login time, that time plus 8 h, and the account
-	0x3623: {"Zone", (*reader).zone},
-	0x3633: {"Self", (*reader).self},
-	0x3641: {"Spawn", (*reader).spawn},
-	0x3642: {"Death", (*reader).death},
-	0x3645: {"Player", (*reader).player},
+	0x3623: {"Zone", zone},
+	0x3633: {"Self", self},
+	0x3641: {"Spawn", spawn},
+	0x3642: {"Death", death},
+	0x3645: {"Player", player},
 
 	// 37: movement
-	0x371A: {"Move", (*reader).moveA},
-	0x371B: {"Move", (*reader).moveB},
-	0x371C: {"Move", (*reader).moveB},
+	0x371A: {"Move", moveA},
+	0x371B: {"Move", moveB},
+	0x371C: {"Move", moveB},
 	0x371D: {"Move", nil}, // 9–12 bytes, a sibling
 
 	// 38: skills
-	0x3802: {"Cast", (*reader).cast},
-	0x3804: {"Hit", (*reader).hit},
+	0x3802: {"Cast", cast},
+	0x3804: {"Hit", hit},
 	0x3805: {"DoT", nil},
-	0x3806: {"CastEnd", (*reader).castEnd},
+	0x3806: {"CastEnd", castEnd},
 
-	0x8D04: {"Owner", (*reader).owner},
+	0x8D04: {"Owner", owner},
 	0x8D2F: {"Notice", nil}, // text to the players, the same in each of its slots
 	0x921B: {"HP", nil},
 	0x9702: {"Party", nil},

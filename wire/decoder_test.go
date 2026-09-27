@@ -59,7 +59,7 @@ func TestOpcode(t *testing.T) {
 	if len(b) != 44 || b[0] != 47 {
 		t.Fatalf("a 41-byte payload: varint %d, %d bytes; want 47, 44", b[0], len(b))
 	}
-	d := NewDecoder(Config{})
+	d := NewDecoder(Config{EmitUnlocked: true})
 	feed(d, b)
 
 	fs := slices.Collect(d.Frames())
@@ -97,7 +97,7 @@ func TestFrameString(t *testing.T) {
 }
 
 func TestShapes(t *testing.T) {
-	d := NewDecoder(Config{})
+	d := NewDecoder(Config{EmitUnlocked: true})
 	feed(d, slices.Concat(
 		wiretest.AppendFrame(nil, 0x00, 0x36, 8), // a frame behind it, so a stream takes it at the start
 		wiretest.AppendFrame(nil, 0x05, 0x38, 300),
@@ -119,7 +119,7 @@ func TestKnownOnly(t *testing.T) {
 }
 
 func TestResync(t *testing.T) {
-	d := NewDecoder(Config{})
+	d := NewDecoder(Config{EmitUnlocked: true})
 	feed(d, slices.Concat([]byte{0xAA, 0xAA}, wiretest.AppendFrame(nil, 0x04, 0x38, 41), wiretest.AppendFrame(nil, 0x05, 0x38, 9)))
 	expect(t, d, "04 38 len=41 resynced\n05 38 len=9 -\n")
 
@@ -128,7 +128,7 @@ func TestResync(t *testing.T) {
 }
 
 func TestProbation(t *testing.T) {
-	d := NewDecoder(Config{})
+	d := NewDecoder(Config{EmitUnlocked: true})
 	feed(d, slices.Concat(
 		[]byte{0x01}, // too short to be a frame, so the next one is found at once
 		wiretest.AppendFrame(nil, 0x04, 0x38, 5),
@@ -141,7 +141,7 @@ func TestProbation(t *testing.T) {
 
 // At the start, envelopes take three headers in a row to believe; after a frame, one.
 func TestEnvelopes(t *testing.T) {
-	d := NewDecoder(Config{})
+	d := NewDecoder(Config{EmitUnlocked: true})
 	f := wiretest.AppendFrame(nil, 0x04, 0x38, 20)
 	feed(d, slices.Concat(enveloped(f, len(f)), enveloped(f, len(f)), enveloped(f, len(f))))
 	st := d.streams[key{src: srv, dst: cli}]
@@ -150,7 +150,7 @@ func TestEnvelopes(t *testing.T) {
 	}
 	expect(t, d, strings.Repeat("04 38 len=20 -\n", 3))
 
-	after := NewDecoder(Config{})
+	after := NewDecoder(Config{EmitUnlocked: true})
 	feed(after, slices.Concat(wiretest.AppendFrame(nil, 0x00, 0x36, 8), enveloped(f, len(f))))
 	if !after.streams[key{src: srv, dst: cli}].fr.env.on {
 		t.Fatal("envelopes not found after a frame")
@@ -170,13 +170,13 @@ func TestEnvelopes(t *testing.T) {
 }
 
 func TestTLS(t *testing.T) {
-	d := NewDecoder(Config{})
+	d := NewDecoder(Config{EmitUnlocked: true})
 	feed(d, []byte{0x16, 0x03, 0x01, 0x00, 0x20, 0x06, 0x00, 0x36, 0x06, 0x00, 0x36})
 	expect(t, d, "")
 }
 
 func TestGarbage(t *testing.T) {
-	d := NewDecoder(Config{})
+	d := NewDecoder(Config{EmitUnlocked: true})
 	x := uint32(12345)
 	junk := make([]byte, 4096)
 	for range 3000 {
@@ -207,7 +207,7 @@ func TestGarbage(t *testing.T) {
 }
 
 func TestFramesBreak(t *testing.T) {
-	d := NewDecoder(Config{})
+	d := NewDecoder(Config{EmitUnlocked: true})
 	feed(d, slices.Concat(wiretest.AppendFrame(nil, 0x04, 0x38, 1), wiretest.AppendFrame(nil, 0x05, 0x38, 2), wiretest.AppendFrame(nil, 0x33, 0x36, 3)))
 	for range d.Frames() {
 		break
@@ -249,7 +249,7 @@ func TestDecode(t *testing.T) {
 	}
 	var got []string
 	var err error
-	for f, e := range NewDecoder(Config{}).Decode(r) {
+	for f, e := range NewDecoder(Config{EmitUnlocked: true}).Decode(r) {
 		if e != nil {
 			err = e
 			break
@@ -270,7 +270,7 @@ func TestLock(t *testing.T) {
 	d.Feed(epoch, web, cli, wiretest.AppendFrame(nil, 0x33, 0x36, 4)) // plausible, but not the lock's
 	d.Feed(epoch, cli, srv, wiretest.AppendFrame(nil, 0x44, 0x36, 4)) // the client side
 	feed(d, wiretest.AppendFrame(nil, 0x05, 0x38, 6))
-	expectDir(t, d, "04 38 len=10 -\n05 38 len=10 server\n05 38 len=6 server\n")
+	expectDir(t, d, "04 38 len=10 server\n05 38 len=10 server\n05 38 len=6 server\n") // the web's frames were never the game's
 }
 
 // Known frames and combat from the client side do not turn the lock around.
@@ -280,7 +280,7 @@ func TestLockHolds(t *testing.T) {
 	feed(d, tick)
 	d.Feed(epoch, cli, srv, slices.Concat(tick, wiretest.AppendFrame(nil, 0x04, 0x38, 10)))
 	feed(d, wiretest.AppendFrame(nil, 0x33, 0x36, 4))
-	expectDir(t, d, "00 36 len=2 -\n00 36 len=2 -\n00 36 len=2 server\n33 36 len=4 server\n")
+	expectDir(t, d, "00 36 len=2 server\n00 36 len=2 server\n00 36 len=2 server\n33 36 len=4 server\n")
 }
 
 // Random bytes, and TLS records split across segments, do not lock; the game's stream does.
@@ -309,7 +309,7 @@ func TestLockNoise(t *testing.T) {
 		wiretest.AppendFrame(nil, 0x04, 0x38, 10),
 		wiretest.AppendFrame(nil, 0x05, 0x38, 10),
 	))
-	expectDir(t, d, "00 36 len=2 -\n04 38 len=10 server\n05 38 len=10 server\n")
+	expectDir(t, d, "00 36 len=2 server\n04 38 len=10 server\n05 38 len=10 server\n")
 }
 
 // The lock ends when its server's stream closes, and the next server locks.
@@ -321,10 +321,10 @@ func TestLockHandover(t *testing.T) {
 	)
 	d.FeedSegment(segment(1, ACK, f, 0))
 	d.FeedSegment(segment(1+uint32(len(f)), FIN|ACK, nil, time.Second))
-	expectDir(t, d, "04 38 len=10 -\n05 38 len=10 server\n")
+	expectDir(t, d, "04 38 len=10 server\n05 38 len=10 server\n")
 
 	d.FeedSegment(Segment{Time: epoch.Add(time.Second + closeGrace), Src: next, Dst: cli, Seq: 1, Flags: ACK, Payload: f})
-	expectDir(t, d, "04 38 len=10 -\n05 38 len=10 server\n")
+	expectDir(t, d, "04 38 len=10 server\n05 38 len=10 server\n")
 	if d.srv == nil || d.srv.key.src != next {
 		t.Error("not locked on the new server")
 	}
@@ -334,7 +334,7 @@ func TestEmitClient(t *testing.T) {
 	d := NewDecoder(Config{EmitClient: true})
 	feed(d, slices.Concat(wiretest.AppendFrame(nil, 0x04, 0x38, 10), wiretest.AppendFrame(nil, 0x05, 0x38, 10)))
 	d.Feed(epoch, cli, srv, wiretest.AppendFrame(nil, 0x44, 0x36, 4))
-	expectDir(t, d, "04 38 len=10 -\n05 38 len=10 server\n44 36 len=4 client\n")
+	expectDir(t, d, "04 38 len=10 server\n05 38 len=10 server\n44 36 len=4 client\n")
 }
 
 func TestLockIdle(t *testing.T) {
@@ -346,11 +346,11 @@ func TestLockIdle(t *testing.T) {
 	}
 	d.Feed(epoch.Add(1000), web, cli, p)
 	d.Feed(epoch.Add(2000), srv, cli, wiretest.AppendFrame(nil, 0x04, 0x38, 10)) // locked on web, so ignored
-	expectDir(t, d, "33 36 len=4 -\n33 36 len=4 -\n33 36 len=4 server\n")
+	expectDir(t, d, "33 36 len=4 server\n33 36 len=4 server\n33 36 len=4 server\n")
 
 	// web quiet for 61 s
 	d.Feed(epoch.Add(2000+61*time.Second), srv, cli, slices.Concat(wiretest.AppendFrame(nil, 0x04, 0x38, 10), wiretest.AppendFrame(nil, 0x05, 0x38, 10)))
-	expectDir(t, d, "04 38 len=10 -\n05 38 len=10 server\n")
+	expectDir(t, d, "04 38 len=10 server\n05 38 len=10 server\n")
 }
 
 // A game segment that starts like a TLS record is skipped while hunting, and the partial frame
@@ -368,7 +368,7 @@ func TestTLSLookalike(t *testing.T) {
 		{"locked", slices.Concat(wiretest.AppendFrame(nil, 0x00, 0x36, 2), wiretest.AppendFrame(nil, 0x05, 0x38, 2)), "04 38 len=41 -\n05 38 len=9 -\n"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			d := NewDecoder(Config{})
+			d := NewDecoder(Config{EmitUnlocked: true})
 			feed(d, tt.before)
 			frames(d)
 			feed(d, a[:20])
@@ -397,7 +397,7 @@ func BenchmarkFeed(b *testing.B) {
 		p = wiretest.AppendFrame(p, 0x33, 0x36, 120)
 		p = wiretest.AppendBundle(p, plain)
 	}
-	d := NewDecoder(Config{})
+	d := NewDecoder(Config{EmitUnlocked: true})
 	b.SetBytes(int64(len(p)))
 	for b.Loop() {
 		for rest := p; len(rest) > 0; {
@@ -460,7 +460,7 @@ func enveloped(p []byte, size int) []byte {
 func TestEnvelopeGap(t *testing.T) {
 	plain, want := bodies(3000, 0x04)
 	decode := func(stream []byte) (found, bogus int) {
-		d := NewDecoder(Config{})
+		d := NewDecoder(Config{EmitUnlocked: true})
 		for i, seq := 0, 0; seq < len(stream); i++ {
 			n := min(len(stream)-seq, 1400)
 			if i != 20 {
@@ -501,7 +501,7 @@ func TestEnvelopeStartGap(t *testing.T) {
 	const from, to = 500, 1900 // the bytes lost
 	plain, want := bodies(12000, 0x04)
 	stream := slices.Concat(binary.LittleEndian.AppendUint32(nil, 1000), plain)
-	d := NewDecoder(Config{})
+	d := NewDecoder(Config{EmitUnlocked: true})
 	d.FeedSegment(segment(1, ACK, stream[:from], 0))
 	for seq := to; seq < len(stream); seq += 1400 {
 		d.FeedSegment(segment(1+uint32(seq), ACK, stream[seq:min(len(stream), seq+1400)], 1))
@@ -523,7 +523,7 @@ func TestEnvelopeGiveUp(t *testing.T) {
 		env        = enveloped(first, 400)
 		stream     = slices.Concat(tick, env, rest)
 		from, to   = len(tick) + 600, len(tick) + len(env) + 50 // lost: the last header, and the envelopes' end
-		d          = NewDecoder(Config{})
+		d          = NewDecoder(Config{EmitUnlocked: true})
 	)
 	d.FeedSegment(segment(1, ACK, stream[:from], 0))
 	for seq := to; seq < len(stream); seq += 1400 {
@@ -551,7 +551,7 @@ func BenchmarkNoise(b *testing.B) {
 	noise := netip.MustParseAddrPort("10.0.0.9:443")
 	b.SetBytes(int64(len(p)))
 	for b.Loop() {
-		d := NewDecoder(Config{})
+		d := NewDecoder(Config{EmitUnlocked: true})
 		for rest := p; len(rest) > 0; {
 			n := min(len(rest), 1400)
 			d.Feed(epoch, noise, cli, rest[:n])
@@ -569,5 +569,80 @@ func TestEnvelopeSkipNothing(t *testing.T) {
 	e.skip(0)
 	if e.lost || e.have != 2 {
 		t.Errorf("lost %v, have %d; want the split header kept", e.lost, e.have)
+	}
+}
+
+func TestEarly(t *testing.T) {
+	var (
+		d    = NewDecoder(Config{EmitClient: true})
+		web  = netip.MustParseAddrPort("10.0.0.9:7777")
+		tick = wiretest.AppendFrame(nil, 0x00, 0x36, 2)
+	)
+	d.Feed(epoch, web, cli, slices.Concat(wiretest.AppendFrame(nil, 0x12, 0x38, 4), wiretest.AppendFrame(nil, 0x13, 0x38, 4)))
+	d.Feed(epoch, cli, srv, wiretest.AppendFrame(nil, 0x55, 0x36, 3)) // the client's, before the lock
+	feed(d, slices.Concat(tick, tick))
+	expectDir(t, d, "") // nothing is anyone's yet
+	feed(d, tick)
+	expectDir(t, d, "00 36 len=2 server\n00 36 len=2 server\n55 36 len=3 client\n00 36 len=2 server\n")
+
+	d = NewDecoder(Config{})
+	feed(d, slices.Concat(tick, tick))
+	d.Flush()
+	expectDir(t, d, "")
+	if st := d.streams[key{src: srv, dst: cli}]; len(st.early) != 0 {
+		t.Errorf("%d early frames kept after Flush", len(st.early))
+	}
+}
+
+func TestEarlyLimit(t *testing.T) {
+	d := NewDecoder(Config{})
+	for i := range maxEarly + 10 {
+		feed(d, wiretest.AppendFrame(nil, byte(i), 0x56, 1)) // plausible, and never known
+	}
+	st := d.streams[key{src: srv, dst: cli}]
+	if len(st.early) != maxEarly || st.early[0].Opcode != Opcode(0x560A) {
+		t.Fatalf("%d early frames, the first %v; want %d, from 0A 56", len(st.early), st.early[0].Opcode, maxEarly)
+	}
+	feed(d, slices.Repeat(wiretest.AppendFrame(nil, 0x00, 0x36, 2), 3)) // the first two ticks wait too
+	if n := len(slices.Collect(d.Frames())); n != maxEarly+1 {
+		t.Errorf("%d frames at the lock, want %d", n, maxEarly+1)
+	}
+}
+
+func TestEarlyTwoInterfaces(t *testing.T) {
+	d := NewDecoder(Config{})
+	p := slices.Repeat(wiretest.AppendFrame(nil, 0x00, 0x36, 2), 3)
+	for i := range 2 {
+		d.FeedSegment(Segment{Time: epoch, Src: srv, Dst: cli, IfIndex: 5 + i, Seq: 1, Flags: ACK, Payload: p[:10]})
+	}
+	d.FeedSegment(Segment{Time: epoch, Src: srv, Dst: cli, IfIndex: 5, Seq: 11, Flags: ACK, Payload: p[10:]})
+	d.FeedSegment(Segment{Time: epoch, Src: srv, Dst: cli, IfIndex: 6, Seq: 11, Flags: ACK, Payload: p[10:]})
+	if n := len(slices.Collect(d.Frames())); n != 3 {
+		t.Errorf("%d frames, want 3", n)
+	}
+}
+
+func TestStats(t *testing.T) {
+	var (
+		d    = NewDecoder(Config{})
+		web  = netip.MustParseAddrPort("10.0.0.9:7777")
+		tick = wiretest.AppendFrame(nil, 0x00, 0x36, 2)
+		lost = []byte{0xAA, 0xAA} // bytes no frame begins with
+	)
+	if s := d.Stats(); s != (Stats{}) {
+		t.Fatalf("a new decoder's stats: %+v", s)
+	}
+	feed(d, slices.Concat(lost, slices.Repeat(tick, 6))) // two frames on probation, then three to lock
+	d.Feed(epoch, cli, srv, slices.Concat(lost, tick, tick))
+	want := Stats{Locked: true, Locks: 1, Server: srv, Client: cli, Resyncs: 1, ClientResyncs: 1}
+	if s := d.Stats(); s != want {
+		t.Errorf("locked: %+v, want %+v", s, want)
+	}
+
+	// Another stream after 61 s of silence ends the lock, and what it counted stays.
+	d.Feed(epoch.Add(61*time.Second), web, cli, slices.Repeat(tick, 3))
+	want = Stats{Locked: true, Locks: 2, Server: web, Client: cli, Resyncs: 1, ClientResyncs: 1}
+	if s := d.Stats(); s != want {
+		t.Errorf("locked on the next: %+v, want %+v", s, want)
 	}
 }

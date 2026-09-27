@@ -19,4 +19,6 @@ func (*Live) Close() error { return nil }
 
 func (*Live) Record(w io.Writer) error { return ErrNoLive }
 
+func (*Live) Lost() error { return nil }
+
 func Devices() ([]Device, error) { return nil, ErrNoLive }

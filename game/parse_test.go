@@ -32,7 +32,7 @@ func frames(t testing.TB, name string) []wire.Frame {
 	if err != nil {
 		t.Fatal(err)
 	}
-	d := wire.NewDecoder(wire.Config{})
+	d := wire.NewDecoder(wire.Config{EmitUnlocked: true})
 	d.Feed(time.Time{}, server, client, b)
 	d.Flush()
 	return slices.Collect(d.Frames())

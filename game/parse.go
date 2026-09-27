@@ -34,7 +34,7 @@ func Parse(f wire.Frame) (Event, error) {
 }
 
 // hit parses a hit event from a frame
-func (r *reader) hit() Event {
+func hit(r *reader) Event {
 	var (
 		h  = Hit{Target: r.entity()}
 		sw = r.varint()
@@ -76,7 +76,7 @@ func (r *reader) hit() Event {
 }
 
 // spawn parses a spawn event from a frame
-func (r *reader) spawn() Event {
+func spawn(r *reader) Event {
 	s := Spawn{Entity: r.entity(), Mask: r.u32()}
 	if r.u8()&1 != 0 {
 		return nil // a name follows; no fixture
@@ -88,7 +88,7 @@ func (r *reader) spawn() Event {
 }
 
 // death parses a death event from a frame
-func (r *reader) death() Event {
+func death(r *reader) Event {
 	d := Death{Entity: r.entity()}
 	if r.varint() != 0 {
 		r.bad = true
@@ -99,7 +99,7 @@ func (r *reader) death() Event {
 }
 
 // owner parses an owner event from a frame
-func (r *reader) owner() Event {
+func owner(r *reader) Event {
 	o := Owner{Entity: r.entity(), Skill: r.skill(), Actor: r.entity()}
 	r.varint() // 504 so far
 	o.Name = r.name()
@@ -107,13 +107,13 @@ func (r *reader) owner() Event {
 }
 
 // player parses a player event from a frame
-func (r *reader) player() Event { return r.character(false) }
+func player(r *reader) Event { return character(r, false) }
 
 // self parses a self event from a frame
-func (r *reader) self() Event { return r.character(true) }
+func self(r *reader) Event { return character(r, true) }
 
 // character parses a character event from a frame
-func (r *reader) character(self bool) Event {
+func character(r *reader, self bool) Event {
 	p := Player{Entity: r.entity(), Self: self}
 	r.skip(4) // a mask, like Spawn's
 	if r.u8()&1 != 0 {
@@ -123,7 +123,7 @@ func (r *reader) character(self bool) Event {
 }
 
 // cast parses a cast event from a frame
-func (r *reader) cast() Event {
+func cast(r *reader) Event {
 	c := Cast{Actor: r.entity()}
 	r.skip(1)
 	c.Skill = r.skill()
@@ -138,7 +138,7 @@ func (r *reader) cast() Event {
 }
 
 // castEnd parses a cast end event from a frame
-func (r *reader) castEnd() Event {
+func castEnd(r *reader) Event {
 	c := CastEnd{Actor: r.entity(), Skill: r.skill()}
 	r.skip(2)
 	r.end()
@@ -146,7 +146,7 @@ func (r *reader) castEnd() Event {
 }
 
 // moveA parses a move event from a frame
-func (r *reader) moveA() Event {
+func moveA(r *reader) Event {
 	m := Move{Entity: r.entity()}
 	r.skip(2)
 	m.Pos = r.pos()
@@ -154,7 +154,7 @@ func (r *reader) moveA() Event {
 }
 
 // moveB parses a move event from a frame
-func (r *reader) moveB() Event {
+func moveB(r *reader) Event {
 	m := Move{Entity: r.entity()}
 	if r.u8()&1 != 0 {
 		r.skip(1)
@@ -164,14 +164,14 @@ func (r *reader) moveB() Event {
 }
 
 // tick parses a tick event from a frame
-func (r *reader) tick() Event {
+func tick(r *reader) Event {
 	t := Tick{Server: unixMilli(int64(r.u64()))}
 	r.end()
 	return t
 }
 
 // ping parses a ping event from a frame
-func (r *reader) ping() Event {
+func ping(r *reader) Event {
 	r.skip(2) // 00 00
 	p := Ping{Client: unixMilli(int64(r.u64()) + dotnetEpoch), Server: unixMilli(int64(r.u64()))}
 	r.end()
@@ -179,7 +179,7 @@ func (r *reader) ping() Event {
 }
 
 // zone parses a zone event from a frame
-func (r *reader) zone() Event {
+func zone(r *reader) Event {
 	if r.varint() != 0 {
 		r.bad = true
 	}

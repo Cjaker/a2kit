@@ -17,7 +17,7 @@ func segment(seq uint32, flags TCPFlags, p []byte, at time.Duration) Segment {
 
 func TestSplit(t *testing.T) {
 	f := wiretest.AppendFrame(nil, 0x04, 0x38, 41)
-	d := NewDecoder(Config{})
+	d := NewDecoder(Config{EmitUnlocked: true})
 	feed(d, f[:10])
 	expect(t, d, "")
 	feed(d, f[10:])
@@ -33,7 +33,7 @@ func TestOrder(t *testing.T) {
 	}
 	for _, isn := range []uint32{1000, 0xFFFFFFF0} {
 		t.Run(fmt.Sprint(isn), func(t *testing.T) {
-			d := NewDecoder(Config{})
+			d := NewDecoder(Config{EmitUnlocked: true})
 			d.FeedSegment(segment(isn-1, SYN, nil, 1))
 			d.FeedSegment(segment(isn+120, ACK, p[120:], 2)) // the tail first
 			d.FeedSegment(segment(isn, ACK, p[:50], 3))
@@ -46,7 +46,7 @@ func TestOrder(t *testing.T) {
 
 func TestGap(t *testing.T) {
 	var (
-		d = NewDecoder(Config{})
+		d = NewDecoder(Config{EmitUnlocked: true})
 		f = wiretest.AppendFrame(nil, 0x05, 0x38, 4)
 	)
 	d.FeedSegment(segment(1, ACK, wiretest.AppendFrame(nil, 0x04, 0x38, 100)[:10], 1)) // and never the rest
@@ -58,7 +58,7 @@ func TestGap(t *testing.T) {
 
 func TestGapKeeps(t *testing.T) {
 	var (
-		d = NewDecoder(Config{})
+		d = NewDecoder(Config{EmitUnlocked: true})
 		f = wiretest.AppendFrame(nil, 0x05, 0x38, 4)
 	)
 	d.FeedSegment(segment(1, ACK, wiretest.AppendFrame(nil, 0x04, 0x38, 100)[:10], 1))
@@ -73,7 +73,7 @@ func TestGapKeeps(t *testing.T) {
 
 func TestTLSSegment(t *testing.T) {
 	var (
-		d   = NewDecoder(Config{})
+		d   = NewDecoder(Config{EmitUnlocked: true})
 		tls = []byte{0x17, 0x03, 0x03, 0x00, 0x02, 0xAB, 0xCD}
 	)
 	d.FeedSegment(segment(1, ACK, tls, 1))
@@ -83,7 +83,7 @@ func TestTLSSegment(t *testing.T) {
 
 func TestGapWait(t *testing.T) {
 	var (
-		d = NewDecoder(Config{})
+		d = NewDecoder(Config{EmitUnlocked: true})
 		f = wiretest.AppendFrame(nil, 0x05, 0x38, 4)
 	)
 	d.FeedSegment(segment(0, SYN, nil, 0))
@@ -107,7 +107,7 @@ func TestGapAcked(t *testing.T) {
 	for _, isn := range []uint32{1000, 0xFFFFFFF0} {
 		t.Run(fmt.Sprint(isn), func(t *testing.T) {
 			var (
-				d   = NewDecoder(Config{})
+				d   = NewDecoder(Config{EmitUnlocked: true})
 				bAt = isn + uint32(len(a))
 				cAt = bAt + uint32(len(b))
 				end = cAt + uint32(len(c))
@@ -129,7 +129,7 @@ func TestGapAcked(t *testing.T) {
 // still parsed.
 func TestAckAhead(t *testing.T) {
 	var (
-		d = NewDecoder(Config{})
+		d = NewDecoder(Config{EmitUnlocked: true})
 		a = wiretest.AppendFrame(nil, 0x04, 0x38, 10)
 		b = wiretest.AppendFrame(nil, 0x05, 0x38, 10)
 	)
@@ -142,7 +142,7 @@ func TestAckAhead(t *testing.T) {
 
 func TestFlush(t *testing.T) {
 	var (
-		d = NewDecoder(Config{})
+		d = NewDecoder(Config{EmitUnlocked: true})
 		f = wiretest.AppendFrame(nil, 0x05, 0x38, 4)
 	)
 	d.FeedSegment(segment(0, SYN, nil, 0))
@@ -153,7 +153,7 @@ func TestFlush(t *testing.T) {
 
 func TestHeldTime(t *testing.T) {
 	var (
-		d = NewDecoder(Config{})
+		d = NewDecoder(Config{EmitUnlocked: true})
 		a = wiretest.AppendFrame(nil, 0x04, 0x38, 10)
 		b = wiretest.AppendFrame(nil, 0x05, 0x38, 10)
 	)
@@ -171,7 +171,7 @@ func TestHeldTime(t *testing.T) {
 
 func TestReconnect(t *testing.T) {
 	var (
-		d = NewDecoder(Config{})
+		d = NewDecoder(Config{EmitUnlocked: true})
 		f = wiretest.AppendFrame(nil, 0x04, 0x38, 20)
 	)
 	d.FeedSegment(segment(1_000_000, SYN|ACK, nil, 1))
@@ -187,7 +187,7 @@ func TestReconnect(t *testing.T) {
 
 func TestFin(t *testing.T) {
 	var (
-		d  = NewDecoder(Config{})
+		d  = NewDecoder(Config{EmitUnlocked: true})
 		f  = wiretest.AppendFrame(nil, 0x33, 0x36, 4)
 		up = Segment{Src: cli, Dst: srv, Seq: 1, Flags: ACK, Payload: f}
 	)
@@ -207,7 +207,7 @@ func TestFin(t *testing.T) {
 }
 
 func TestStalest(t *testing.T) {
-	d := NewDecoder(Config{})
+	d := NewDecoder(Config{EmitUnlocked: true})
 	port := func(i int) netip.AddrPort {
 		return netip.AddrPortFrom(netip.MustParseAddr("10.0.1.1"), uint16(1000+i))
 	}

@@ -67,6 +67,7 @@ type Live struct {
 	closers  []closer // what OpenLive began; Close undoes it last first
 	closed   sync.Once
 	closeErr error
+	lost     error // what degraded said at Close
 }
 
 type closer struct {
@@ -126,7 +127,7 @@ func (l *Live) start() error {
 	_, err = pktmon("start", "--capture", "--comp", comps, "--pkt-size", "0",
 		"--file-name", filepath.Join(dir, "capture.etl"), "--file-size", "32")
 	if err != nil {
-		return fmt.Errorf("capture: pktmon: starting capture of %s: %w", comps, err)
+		return fmt.Errorf("capture: pktmon: starting capture of %s: %w; if another pktmon session is running, pktmon stop ends it", comps, err)
 	}
 	l.onClose("stopping pktmon", func() error {
 		_, err := pktmon("stop")
@@ -166,8 +167,7 @@ func (l *Live) Record(w io.Writer) error {
 	return nil
 }
 
-// Close ends the capture, and may be called from any goroutine. It reports what it could not undo,
-// and what went wrong on the way.
+// Close ends the capture, and may be called from any goroutine. It reports what it could not undo.
 func (l *Live) Close() error {
 	l.closed.Do(func() {
 		l.end(io.EOF)
@@ -177,10 +177,13 @@ func (l *Live) Close() error {
 				errs = append(errs, fmt.Errorf("capture: pktmon: %s: %w", c.what, err))
 			}
 		}
-		l.closeErr = errors.Join(errors.Join(errs...), l.degraded())
+		l.closeErr, l.lost = errors.Join(errs...), l.degraded()
 	})
 	return l.closeErr
 }
+
+// Lost reports what a closed capture lost without failing.
+func (l *Live) Lost() error { return l.lost }
 
 // end ends the capture with err, which ReadSegment then returns. Only the first call counts.
 func (l *Live) end(err error) {

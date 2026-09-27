@@ -25,11 +25,13 @@ func ExampleDecoder_Decode() {
 		}
 		fmt.Println(fr.Opcode, len(fr.Payload), fr.Flags)
 	}
+	fmt.Printf("%+v\n", d.Stats())
 	// Output:
-	// 04 38 41 -
-	// 2A 38 16 -
+	// 04 38 41 server
+	// 2A 38 16 server
 	// 05 38 20 server
 	// 33 36 12 server
+	// {Locked:true Locks:1 Resyncs:0 ClientResyncs:0 Server:10.0.0.2:13328 Client:10.0.0.1:10000}
 }
 
 func ExampleDecoder_Feed() {
@@ -47,7 +49,7 @@ func ExampleDecoder_Feed() {
 		fmt.Println(f.Opcode, len(f.Payload), f.Flags)
 	}
 	// Output:
-	// 04 38 41 -
+	// 04 38 41 server
 	// 04 38 41 server
 	// 05 38 20 server
 	// 33 36 12 server

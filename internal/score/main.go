@@ -6,7 +6,7 @@
 // Each corpus is captures of one server stream: small frames, bundles, padding, and a share of
 // big frames, their opcodes drawn as real traffic has them, and their payloads random. A capture
 // may start mid-stream, and loses one to three of its segments and reorders others. Each is read
-// twice: as a pcap, the way dump -pcap reads it, and given to Feed in pieces, some sent the other
+// twice: as a pcap, the way a2k show reads it, and given to Feed in pieces, some sent the other
 // way and so lost. The output is deterministic.
 //
 // Random payloads make frames found by chance as likely as they can be, so it overstates what
@@ -14,18 +14,13 @@
 package main
 
 import (
-	"bytes"
 	"flag"
 	"fmt"
 	"io"
 	"log"
 	"os"
-	"runtime"
-	"slices"
-	"sync"
 	"text/tabwriter"
 
-	"github.com/nuriland/a2kit/capture"
 	"github.com/nuriland/a2kit/wire"
 )
 
@@ -87,52 +82,6 @@ func count(want []frame, got []wire.Frame) (t tally) {
 		t.foundBy[class(len(f.Payload))]++
 	}
 	return t
-}
-
-// run scores n captures of c, both ways, in parallel.
-func (c corpus) run(n int) (pcap, feed tally) {
-	var (
-		mu  sync.Mutex
-		wg  sync.WaitGroup
-		sem = make(chan struct{}, runtime.GOMAXPROCS(0))
-	)
-	for i := range uint64(n) {
-		wg.Go(func() {
-			sem <- struct{}{}
-			defer func() { <-sem }()
-			p, f := c.score(i)
-			mu.Lock()
-			pcap.add(p)
-			feed.add(f)
-			mu.Unlock()
-		})
-	}
-	wg.Wait()
-	return pcap, feed
-}
-
-func (c corpus) score(i uint64) (pcap, feed tally) {
-	s := c.sampler(i, false)
-	b, want := s.stream()
-	r, err := capture.NewReader(bytes.NewReader(s.capture(b)))
-	if err != nil {
-		log.Fatal(err)
-	}
-	var got []wire.Frame
-	for f, err := range wire.NewDecoder(wire.Config{EmitClient: true}).Decode(r) {
-		if err != nil {
-			log.Fatal(err)
-		}
-		got = append(got, f)
-	}
-	pcap = count(want, got)
-
-	s = c.sampler(i, true)
-	b, want = s.stream()
-	d := wire.NewDecoder(wire.Config{EmitClient: true})
-	s.feed(d, b)
-	feed = count(want, slices.Collect(d.Frames()))
-	return pcap, feed
 }
 
 func main() {

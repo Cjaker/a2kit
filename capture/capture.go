@@ -24,6 +24,7 @@ var (
 type Device struct {
 	Name        string
 	Description string
+	Default     bool
 }
 
 // Reader reads a pcap or pcapng capture.

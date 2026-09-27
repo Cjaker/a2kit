@@ -203,9 +203,11 @@ func TestCloseReportsWhatWentWrong(t *testing.T) {
 	l.trace = etw.NewRealTimeConsumer(context.Background())
 	l.trace.LostEvents = 3
 	l.dropped = 2
-	err := l.Close()
-	if err == nil || !strings.Contains(err.Error(), "lost events 3 times") || !strings.Contains(err.Error(), "2 packets dropped") {
-		t.Errorf("Close = %v, want the lost events and the dropped packets", err)
+	if err := l.Close(); err != nil {
+		t.Errorf("Close = %v, but it undid everything", err)
+	}
+	if err := l.Lost(); err == nil || !strings.Contains(err.Error(), "lost events 3 times") || !strings.Contains(err.Error(), "2 packets dropped") {
+		t.Errorf("Lost = %v, want the lost events and the dropped packets", err)
 	}
 }
 
@@ -250,9 +252,11 @@ func TestFailedFlushDoesNotEndTheCapture(t *testing.T) {
 		t.Error("a failed flush ended the capture")
 	default:
 	}
-	err := l.Close()
-	if err == nil || !strings.Contains(err.Error(), "flushing the ETW session failed") || !strings.Contains(err.Error(), "access denied") {
-		t.Errorf("Close = %v, want the failed flush", err)
+	if err := l.Close(); err != nil {
+		t.Errorf("Close = %v, but it undid everything", err)
+	}
+	if err := l.Lost(); err == nil || !strings.Contains(err.Error(), "flushing the ETW session failed") || !strings.Contains(err.Error(), "access denied") {
+		t.Errorf("Lost = %v, want the failed flush", err)
 	}
 }
 

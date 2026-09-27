@@ -1,7 +1,6 @@
 package wire
 
 import (
-	"bytes"
 	"encoding/binary"
 )
 
@@ -67,65 +66,6 @@ func (e *envelopes) strip(p []byte) (out []byte, over bool) {
 		return append(out, tail...), true
 	}
 	return out, false
-}
-
-// envelope reports whether an envelope begins at p: a believable length followed by a plausible
-// frame, in bytes that do not begin a plausible frame themselves. Unless afterFrame, two more
-// believable headers must follow, one envelope apart, within stallLimit bytes. Missing bytes can
-// only raise a little-endian length, so a partial header that is already too long is none.
-func (f *framer) envelope(p []byte, afterFrame bool) verdict {
-	var h [4]byte
-	n := copy(h[:], p)
-	switch l := binary.LittleEndian.Uint32(h[:]); {
-	case l > maxEnvelope, n == 4 && l < minEnvelope:
-		return no
-	case n < 4:
-		return maybe
-	}
-	if f.begins(bytes.TrimLeft(p, "\x00")) == yes {
-		return no
-	}
-	if v := f.accepts(p[4:]); v != yes || afterFrame {
-		return v
-	}
-	return chain(p, 0, stallLimit)
-}
-
-// strip removes the headers from f.buf[from:].
-func (f *framer) strip(from int) {
-	out, over := f.env.strip(f.buf[from:])
-	f.buf = append(f.buf[:from], out...)
-	if over {
-		f.log.Warn("envelopes ended")
-		f.aligned = false
-	}
-}
-
-// refind searches the raw bytes since a lost header for three believable headers in a row, one
-// envelope apart. The bytes before the first end the envelope the gap cut into and are kept as
-// body. It reports whether f.buf is ready to parse: the headers were found, or maxBuf bytes
-// arrived without them and the envelopes are over.
-func (f *framer) refind() bool {
-	e := &f.env
-	h, found := e.search.find(0, len(f.buf)-3, func(h int) verdict {
-		if !believable(binary.LittleEndian.Uint32(f.buf[h:])) {
-			return no
-		}
-		return chain(f.buf, h, maxBuf)
-	})
-	switch {
-	case found:
-		f.log.Info("envelopes found again", "at", h)
-		e.lost, e.left = false, h
-		e.search.reset()
-		f.strip(0)
-		return true
-	case len(f.buf) < maxBuf:
-		return false
-	}
-	f.log.Warn("envelopes given up")
-	*e = envelopes{}
-	return true
 }
 
 // chain reports whether the header at h is followed by two more believable headers, one envelope

@@ -1,13 +1,18 @@
 package main
 
 import (
+	"bytes"
 	"encoding/binary"
+	"log"
 	"math"
 	"math/rand/v2"
 	"net/netip"
+	"runtime"
 	"slices"
+	"sync"
 	"time"
 
+	"github.com/nuriland/a2kit/capture"
 	"github.com/nuriland/a2kit/internal/wiretest"
 	"github.com/nuriland/a2kit/wire"
 )
@@ -228,4 +233,49 @@ func (s *sampler) feed(d *wire.Decoder, b []byte) {
 		b = b[n:]
 		t = t.Add(time.Microsecond)
 	}
+}
+
+func (c corpus) run(n int) (pcap, feed tally) {
+	var (
+		mu  sync.Mutex
+		wg  sync.WaitGroup
+		sem = make(chan struct{}, runtime.GOMAXPROCS(0))
+	)
+	for i := range uint64(n) {
+		wg.Go(func() {
+			sem <- struct{}{}
+			defer func() { <-sem }()
+			p, f := c.score(i)
+			mu.Lock()
+			pcap.add(p)
+			feed.add(f)
+			mu.Unlock()
+		})
+	}
+	wg.Wait()
+	return pcap, feed
+}
+
+func (c corpus) score(i uint64) (pcap, feed tally) {
+	s := c.sampler(i, false)
+	b, want := s.stream()
+	r, err := capture.NewReader(bytes.NewReader(s.capture(b)))
+	if err != nil {
+		log.Fatal(err)
+	}
+	var got []wire.Frame
+	for f, err := range wire.NewDecoder(wire.Config{EmitClient: true, EmitUnlocked: true}).Decode(r) {
+		if err != nil {
+			log.Fatal(err)
+		}
+		got = append(got, f)
+	}
+	pcap = count(want, got)
+
+	s = c.sampler(i, true)
+	b, want = s.stream()
+	d := wire.NewDecoder(wire.Config{EmitClient: true, EmitUnlocked: true})
+	s.feed(d, b)
+	feed = count(want, slices.Collect(d.Frames()))
+	return pcap, feed
 }

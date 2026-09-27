@@ -1,6 +1,7 @@
 package game
 
-// Entity identifies something in the world for the session. Anything from a player, a mob, a summon, etc.
+// Entity identifies something in the world for the session. It can be a player, a mob, or a summon.
+// An ID names a spawn slot. A life ends at Death, and the next Spawn of the ID begins another.
 type Entity uint32
 
 // Skill is a skill's id from the game files.
