@@ -80,10 +80,10 @@ jobs:
           CGO_ENABLED: ${{ matrix.cgo }}
         # An archive keeps the binary executable, which a bare artifact would not.
         run: |
-          name=dump-$GOOS-$GOARCH
-          bin=dump
-          if [ "$GOOS" = windows ]; then bin=dump.exe; fi
-          go build -trimpath -ldflags='-s -w' -o "out/$bin" ./cmd/dump
+          name=a2k-$GOOS-$GOARCH
+          bin=a2k
+          if [ "$GOOS" = windows ]; then bin=a2k.exe; fi
+          go build -trimpath -ldflags='-s -w' -o "out/$bin" ./cmd/a2k
           mkdir dist
           if [ "$GOOS" = windows ]; then
             (cd out && zip "../dist/$name.zip" "$bin")
@@ -92,7 +92,7 @@ jobs:
           fi
       - uses: actions/upload-artifact@v7
         with:
-          name: dump-${{ matrix.goos }}-${{ matrix.goarch }}
+          name: a2k-${{ matrix.goos }}-${{ matrix.goarch }}
           path: dist/*
 
   release:
@@ -104,7 +104,7 @@ jobs:
     steps:
       - uses: actions/download-artifact@v8
         with:
-          pattern: dump-*
+          pattern: a2k-*
           path: dist
           merge-multiple: true
       - name: publish
@@ -112,7 +112,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          sha256sum dump-* > SHA256SUMS
+          sha256sum a2k-* > SHA256SUMS
           gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 ||
             gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --generate-notes
-          gh release upload "$GITHUB_REF_NAME" dump-* SHA256SUMS --repo "$GITHUB_REPOSITORY" --clobber
+          gh release upload "$GITHUB_REF_NAME" a2k-* SHA256SUMS --repo "$GITHUB_REPOSITORY" --clobber

@@ -11,20 +11,17 @@ import (
 // lagEvery is how often lag logs, when frames keep coming.
 const lagEvery = 5 * time.Second
 
-// lag logs how far the frames run behind the wire, which is the time from a frame's packet to the frame coming out.
-// For a live capture that is the capture's own delay, since decoding takes microseconds.
 type lag struct {
 	log   *slog.Logger
 	now   func() time.Time
 	seen  []time.Duration
-	since time.Time // when it last logged
+	since time.Time
 }
 
 func newLag(log *slog.Logger, now func() time.Time) *lag {
 	return &lag{log: log, now: now, since: now()}
 }
 
-// note counts f, and logs the frames counted so far once lagEvery has passed.
 func (l *lag) note(f wire.Frame) {
 	now := l.now()
 	l.seen = append(l.seen, now.Sub(f.Time))
@@ -34,7 +31,6 @@ func (l *lag) note(f wire.Frame) {
 	}
 }
 
-// report logs the frames counted since the last report, and starts counting again.
 func (l *lag) report() {
 	n := len(l.seen)
 	if n == 0 {
