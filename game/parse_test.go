@@ -121,6 +121,9 @@ func TestParseRejects(t *testing.T) {
 		{"owner whose name is not utf-8", 0x8D04, "f5 a3 02 60 41 ae 00 c7 7c f8 03 02 ff fe", game.ErrLayout},
 		{"ping a byte short", 0x3603, "00 00 5a 43 39 e5 23 3a 00 00 64 69 0c d3 a0 01 00", game.ErrLayout},
 		{"zone of another entity", 0x3623, "c7 7c 00 00 00 00 00 7e 87 ca c6 82 a0 03 c7 00 50 8d 46", game.ErrLayout},
+		{"name check without its trailing 01", 0x361A, "00 00 02 48 65", game.ErrLayout},
+		{"name check whose trailer is not 01", 0x361A, "00 00 02 48 65 02", game.ErrLayout},
+		{"name check with a byte too many", 0x361A, "00 00 02 48 65 01 00", game.ErrLayout},
 		{"varint over five bytes", 0x3642, "ff ff ff ff ff ff 00 03", game.ErrLayout},
 		{"an opcode met but not read", 0x3805, "c7 7c 02 f5 a3 02 00 e0 26 a8 00 24", game.ErrUnread},
 	}

@@ -46,6 +46,14 @@ func (r *reader) u8() byte {
 	return 0
 }
 
+// u16 reads a 16-bit unsigned integer.
+func (r *reader) u16() uint16 {
+	if b := r.take(2); b != nil {
+		return binary.LittleEndian.Uint16(b)
+	}
+	return 0
+}
+
 // u32 reads a 32-bit unsigned integer.
 func (r *reader) u32() uint32 {
 	if b := r.take(4); b != nil {

@@ -17,6 +17,7 @@ var opcodes = map[wire.Opcode]op{
 	0x3603: {"Ping", ping},
 	0x3611: {"Handshake", nil}, // a login's first frame
 	0x3615: {"Login", nil},     // the login time, that time plus 8 h, and the account
+	0x361A: {"NameCheck", nameCheck},
 	0x3623: {"Zone", zone},
 	0x3633: {"Self", self},
 	0x3641: {"Spawn", spawn},

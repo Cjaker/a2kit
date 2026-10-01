@@ -187,5 +187,16 @@ func zone(r *reader) Event {
 	return Zone{Pos: r.pos()}
 }
 
+// nameCheck parses a name check event from a frame
+func nameCheck(r *reader) Event {
+	n := NameCheck{Code: r.u16(), Name: r.name()}
+	if r.u8() != 1 { // unsure what 01 means here yet, the race, class, gender, character slot or server doesn't affect this value
+		r.bad = true
+	}
+	r.end()
+	n.Taken = n.Code != 0
+	return n
+}
+
 // unixMilli converts a Unix milliseconds timestamp to a time.Time in UTC.
 func unixMilli(ms int64) time.Time { return time.UnixMilli(ms).UTC() }

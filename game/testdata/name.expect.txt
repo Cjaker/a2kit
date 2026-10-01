@@ -1,0 +1,2 @@
+1A 36 game.NameCheck {Name:He Taken:false Code:0}
+1A 36 game.NameCheck {Name:Test Taken:true Code:8227}

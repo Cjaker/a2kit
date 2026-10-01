@@ -26,7 +26,15 @@ type Move struct {
 // Zone places the client's character in the world after a zone change
 type Zone struct{ Pos }
 
-func (Spawn) event()  {}
-func (Player) event() {}
-func (Move) event()   {}
-func (Zone) event()   {}
+// NameCheck is the server's answer when the client registers a name for a new character
+type NameCheck struct {
+	Name  string
+	Taken bool   // the server refused the name
+	Code  uint16 // 0 when the name is free, 0x2023 when it is taken
+}
+
+func (Spawn) event()     {}
+func (Player) event()    {}
+func (Move) event()      {}
+func (Zone) event()      {}
+func (NameCheck) event() {}
