@@ -63,6 +63,7 @@ type Live struct {
 	dropped uint64    // packets the queue had no room for, counted by the callback
 
 	flushErr chan error // why flushing stopped, if it failed
+	staleErr error      // the sessions of killed captures that start could not stop
 
 	closers  []closer // what OpenLive began; Close undoes it last first
 	closed   sync.Once
@@ -97,9 +98,14 @@ func OpenLive(name string) (*Live, error) {
 
 // start begins the capture, and registers how to undo each step as it succeeds.
 func (l *Live) start() error {
-	l.session = etw.NewRealTimeSession(fmt.Sprintf("a2kit-pktmon-%d-%d", os.Getpid(), time.Now().UnixNano()))
+	l.staleErr = stopStale()
+	name, err := ownSessionName()
+	if err != nil {
+		return err
+	}
+	l.session = etw.NewRealTimeSession(name)
 	l.onClose("stopping ETW", l.stopETW)
-	err := l.session.EnableProvider(etw.Provider{GUID: pktmonProvider, EnableLevel: 0xff, MatchAnyKeyword: ^uint64(0)})
+	err = l.session.EnableProvider(etw.Provider{GUID: pktmonProvider, EnableLevel: 0xff, MatchAnyKeyword: ^uint64(0)})
 	if err != nil {
 		return fmt.Errorf("capture: pktmon: enabling the provider (Administrator may be required): %w", err)
 	}
@@ -249,11 +255,9 @@ func (l *Live) stopETW() error {
 	return err
 }
 
-// degraded reports what went wrong without ending the capture: packets lost, because ETW lost
-// events before the callback saw them or the queue had no room, and a flush that failed. The decoder
-// gives up the gaps. It reads what the callback counted, so it is for after the trace has stopped.
+// degraded reports what went wrong without ending the capture
 func (l *Live) degraded() error {
-	var errs []error
+	errs := []error{l.staleErr}
 	if l.trace != nil && l.trace.LostEvents > 0 {
 		errs = append(errs, fmt.Errorf("capture: pktmon: ETW reported lost events %d times", l.trace.LostEvents))
 	}
