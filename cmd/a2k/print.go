@@ -43,6 +43,7 @@ func (w *output) Close() error {
 
 type printer struct {
 	json, wire bool
+	hideTicks  bool
 	w          *output
 	t0         time.Time
 }
@@ -64,6 +65,9 @@ func (p *printer) check() error {
 func (p *printer) print(m a2kit.Message) error {
 	if p.t0.IsZero() {
 		p.t0 = m.Time
+	}
+	if p.hideTicks && typeName(m) == "Tick" {
+		return nil
 	}
 	switch {
 	case p.json:

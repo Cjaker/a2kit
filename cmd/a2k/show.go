@@ -53,6 +53,7 @@ It finds the game's connection by itself, among all the traffic of the adapter, 
 	define: func(fs *flag.FlagSet, o *options) func([]string) error {
 		p := printing(fs)
 		o.liveFlags(fs)
+		ticks := fs.Bool("ticks", false, "also print Tick, the server's clock")
 		fs.StringVar(&o.pcap, "pcap", "", "also record all the adapter's traffic to `file`, a pcap")
 		fs.StringVar(&o.log, "log", "", "also write the game's messages to `file`, a log")
 		o.clientFlag(fs)
@@ -62,6 +63,7 @@ It finds the game's connection by itself, among all the traffic of the adapter, 
 			if err := cmp.Or(none(args), p.check(), o.checkLive()); err != nil {
 				return err
 			}
+			p.hideTicks = !*ticks
 			return show(o, p, o.capture)
 		}
 	},
