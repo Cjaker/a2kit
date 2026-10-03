@@ -1,6 +1,6 @@
 # a2kit
 
-Passive AION 2 protocol decoder. No injection. No Npcap/WinPcap required.
+A passive AION 2 protocol toolkit, library and CLI (capture, decode, telemetry, analysis) with a structured a2log session format. No injection. No Npcap/WinPcap required.
 
 ## CLI
 Download `a2k` for your system from the [releases](https://github.com/nuriland/a2kit/releases), or install it as a CLI tool:
@@ -28,6 +28,12 @@ Example usage of `a2k show`:
    21.050  Hit        actor=37365 target=15943 skill=11020000 damage=36 type=2 scalar=10000
 ```
 
+From the server list on, before a world server is picked:
+```
+    1.006  Servers    list=[1301:LIVE_Light_001 3245/7500 restricted 1302:LIVE_Light_002 2374/7000 ...]
+    5.015  Redirect   server=1304 host=10.0.0.2 port=13328
+```
+
 ## Live capture
 
 `watch` and `record` find the game's connection by themselves. Needs priviledged access to run on all platforms (Win, Linux, MacOS).
@@ -35,8 +41,6 @@ Example usage of `a2k show`:
 ### Windows
   - Doesn't require Npcap or WinPcap installed, it runs on native pktmon monitor.
   - It captures on every adapter at once (`nics`), a VPN's tunnel included, by default. `a2k adapters` lists the adapters.
-  - A capture that is killed, rather than stopped, leaves pktmon running. `pktmon stop` ends it
-    - Running a2k with the `-for` flag closes the pktmon session automatically
 
 ## Recording and sharing
 
@@ -44,9 +48,11 @@ Example usage of `a2k show`:
 - `-log fight.jsonl`, a log of the game's messages only, with their raw bytes
 - `fight.pcap`, a recording of all the adapter's TCP traffic. DO NOT SHARE THESE PUBLICLY.
 
+The log, `a2k export` and `a2k timeline` leave out the messages that name your account (`Login`, `Account`, `Characters`). `-account` keeps them. What `show` and `watch` print still includes them.
+
 ## a2log
 
-`a2k record -log` and `a2k export` write an a2log file format. It is one JSON object per line: a header, then a line for each of the game's messages, with its raw bytes.
+`a2k record -log` and `a2k export` write an a2log file format.
 
 ```json
 {"schema":"a2log/v0.1","decoder":"github.com/nuriland/a2kit@v0.3.0","source":{"kind":"pcap","path":"fight.pcap"},"t0":"2026-09-23T18:00:00.123Z"}
@@ -105,7 +111,7 @@ for f, err := range r.Frames() {
 }
 ```
 
-Warning: A log holds what the game sent, players' names and a login's account ID among it.
+Warning: A log holds what the game sent, players' names among it. Your account ID and character list are left out unless it was written with `-account`.
 
 ## As a library
 
@@ -130,14 +136,5 @@ for m, err := range r.Messages() {
 }
 fmt.Printf("%+v\n", r.Summary()) // how many were decoded, the game's connection, what was lost
 ```
-
-`a2kit.Analyze` reads a recording for its message types, and `a2kit.WriteTrace` writes a timeline. Underneath, for more control:
-
-- `capture` reads recordings, or captures live
-- `wire` turns the packets into the game's messages
-- `game` reads what a message means
-- `a2log` writes and reads logs
-
-Live capture needs cgo and libpcap on macOS and Linux.
 
 Work in progress.
