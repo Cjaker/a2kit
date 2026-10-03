@@ -22,6 +22,7 @@ var recordCommand = command{
 	define: func(fs *flag.FlagSet, o *options) func([]string) error {
 		o.liveFlags(fs)
 		fs.StringVar(&o.log, "log", "", "write the game's messages to `file`, a log; - is stdout")
+		o.accountFlag(fs)
 		o.clientFlag(fs)
 		o.verboseFlag(fs)
 		return func(args []string) error {
@@ -76,7 +77,7 @@ func record(o *options) error {
 				fmt.Fprintln(o.stderr, "a2k: found the game at", server)
 			}
 			if lg != nil {
-				if err := lg.Write(m.Frame); err != nil {
+				if err := o.logWrite(lg, m.Frame); err != nil {
 					return err
 				}
 			}

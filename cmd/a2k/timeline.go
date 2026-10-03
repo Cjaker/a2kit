@@ -16,6 +16,7 @@ a track a message type, and a track an entity, with its hits, casts, spawn and d
   a2k timeline fight.pcap -o fight.trace.json`,
 	define: func(fs *flag.FlagSet, o *options) func([]string) error {
 		o.clientFlag(fs)
+		o.accountFlag(fs)
 		o.verboseFlag(fs)
 		o.streamFlag(fs)
 		o.outputFlag(fs)
@@ -34,7 +35,7 @@ a track a message type, and a track an entity, with its hits, casts, spawn and d
 			if err != nil {
 				return finish(o, r, nil, err)
 			}
-			return finish(o, r, out, a2kit.WriteTrace(out, r.Messages()))
+			return finish(o, r, out, a2kit.WriteTrace(out, o.shared(r.Messages())))
 		}
 	},
 }

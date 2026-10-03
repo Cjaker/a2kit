@@ -24,6 +24,7 @@ A line is the seconds since the first message, the message's name, and what a2k 
 a2k help types says where the fields are documented. -json writes a JSON line each instead, for scripts, and -wire writes the protocol's view.`,
 	define: func(fs *flag.FlagSet, o *options) func([]string) error {
 		p := printing(fs)
+		ticks := fs.Bool("ticks", false, "also print Tick, the server's clock")
 		o.clientFlag(fs)
 		o.verboseFlag(fs)
 		o.streamFlag(fs)
@@ -36,6 +37,7 @@ a2k help types says where the fields are documented. -json writes a JSON line ea
 			if err := p.check(); err != nil {
 				return err
 			}
+			p.hideTicks = !*ticks
 			return show(o, p, func() (*a2kit.Reader, error) { return o.open(name) })
 		}
 	},
@@ -56,6 +58,7 @@ It finds the game's connection by itself, among all the traffic of the adapter, 
 		ticks := fs.Bool("ticks", false, "also print Tick, the server's clock")
 		fs.StringVar(&o.pcap, "pcap", "", "also record all the adapter's traffic to `file`, a pcap")
 		fs.StringVar(&o.log, "log", "", "also write the game's messages to `file`, a log")
+		o.accountFlag(fs)
 		o.clientFlag(fs)
 		o.verboseFlag(fs)
 		o.outputFlag(fs)
@@ -100,7 +103,7 @@ func show(o *options, p *printer, open func() (*a2kit.Reader, error)) error {
 				behind.note(m.Frame)
 			}
 			if lg != nil {
-				if err := lg.Write(m.Frame); err != nil {
+				if err := o.logWrite(lg, m.Frame); err != nil {
 					return err
 				}
 			}

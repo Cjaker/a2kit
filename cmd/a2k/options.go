@@ -7,6 +7,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"iter"
 	"log/slog"
 	"os"
 	"os/signal"
@@ -15,6 +16,8 @@ import (
 
 	"github.com/nuriland/a2kit"
 	"github.com/nuriland/a2kit/a2log"
+	"github.com/nuriland/a2kit/game"
+	"github.com/nuriland/a2kit/wire"
 )
 
 // options are the flags the commands share, each defining those it takes, and where they write.
@@ -31,6 +34,7 @@ type options struct {
 	pcap    string        // live: record all the adapter's traffic to this file
 	log     string        // live: write the game's messages to this log, "-" for stdout
 	dur     time.Duration // live: stop after this long
+	account bool          // keep Login, Account and Characters in a file to share
 
 	closers []func() error // what the command opened beside the Reader, in the order to close it
 }
@@ -45,6 +49,10 @@ func (o *options) clientFlag(fs *flag.FlagSet) {
 
 func (o *options) verboseFlag(fs *flag.FlagSet) {
 	fs.BoolVar(&o.verbose, "v", false, "log what the decoder does to stderr")
+}
+
+func (o *options) accountFlag(fs *flag.FlagSet) {
+	fs.BoolVar(&o.account, "account", false, "keep Login, Account and Characters, which name the account; left out by default, for a file to share")
 }
 
 func (o *options) streamFlag(fs *flag.FlagSet) {
@@ -146,6 +154,31 @@ func (o *options) openLog(src a2log.Source) (*a2log.Writer, error) {
 	lg := a2log.NewWriter(f, src)
 	o.closers = append(o.closers, lg.Close, f.Close) // an empty log's header, before the file closes
 	return lg, nil
+}
+
+// private reports whether f names the account or its characters.
+func (o *options) private(f wire.Frame) bool { return !o.account && game.Private(f.Opcode) }
+
+// logWrite writes f to lg, unless it is private.
+func (o *options) logWrite(lg *a2log.Writer, f wire.Frame) error {
+	if o.private(f) {
+		return nil
+	}
+	return lg.Write(f)
+}
+
+// shared is msgs without the private ones.
+func (o *options) shared(msgs iter.Seq2[a2kit.Message, error]) iter.Seq2[a2kit.Message, error] {
+	return func(yield func(a2kit.Message, error) bool) {
+		for m, err := range msgs {
+			if err == nil && o.private(m.Frame) {
+				continue
+			}
+			if !yield(m, err) {
+				return
+			}
+		}
+	}
 }
 
 // openOutput is where the command writes: -o's file, or stdout.

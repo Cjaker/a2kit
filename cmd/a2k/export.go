@@ -13,11 +13,13 @@ var exportCommand = command{
 	short: "a log to share, a JSON line a message",
 	long: `Export writes the game's messages in FILE, a recording, as an a2log/v0.1 log: a header line,
 then a JSON line a message, with its raw bytes. It holds only the game's traffic, so it is what
-to share, and a newer a2k decodes more of it. a2k show reads it back.
+to share, and a newer a2k decodes more of it. It leaves out Login, Account and Characters,
+which name the account, unless -account is passed. a2k show reads it back.
 
   a2k export fight.pcap -o fight.jsonl`,
 	define: func(fs *flag.FlagSet, o *options) func([]string) error {
 		o.clientFlag(fs)
+		o.accountFlag(fs)
 		o.verboseFlag(fs)
 		o.streamFlag(fs)
 		o.outputFlag(fs)
@@ -41,7 +43,7 @@ to share, and a newer a2k decodes more of it. a2k show reads it back.
 					if err != nil {
 						return err
 					}
-					if err := lg.Write(m.Frame); err != nil {
+					if err := o.logWrite(lg, m.Frame); err != nil {
 						return err
 					}
 				}
