@@ -24,6 +24,15 @@ var opcodes = map[wire.Opcode]op{
 	0x3642: {"Death", death},
 	0x3645: {"Player", player},
 
+	// 39: the lobby, which lists the servers and hands the client to the one picked
+	0x3901: {"LobbyHandshake", nil}, // the lobby's first frame
+	0x3903: {"LobbyPing", lobbyPing},
+	0x3906: {"Account", account},
+	0x3909: {"Servers", servers},
+	0x390B: {"Characters", characters},
+	0x390D: {"Join", nil}, // the server picked
+	0x390F: {"Redirect", redirect},
+
 	// 37: movement
 	0x371A: {"Move", moveA},
 	0x371B: {"Move", moveB},
@@ -44,3 +53,9 @@ var opcodes = map[wire.Opcode]op{
 
 // Name is what the table calls o, or "" for an opcode it has not met.
 func Name(o wire.Opcode) string { return opcodes[o].name }
+
+// private is the opcodes that name the account or its characters
+var private = map[wire.Opcode]bool{0x3615: true, 0x3906: true, 0x390B: true}
+
+// Private reports whether o names the account or its characters
+func Private(o wire.Opcode) bool { return private[o] }

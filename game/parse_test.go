@@ -2,6 +2,7 @@ package game_test
 
 import (
 	"bytes"
+	"encoding/binary"
 	"encoding/hex"
 	"errors"
 	"flag"
@@ -92,6 +93,138 @@ func TestParseHit(t *testing.T) {
 	}
 }
 
+// The byte before every fourth server's Status holds two bits a server, and its faction is read.
+func TestParseServers(t *testing.T) {
+	payload := unhex(t, "00 00 03"+
+		" 15 05 01 15 05 00 00 03 4c 5f 31 15 04 4c 1d ad 0c 00 00 50 01 00"+
+		" 1d 05 01 1d 05 00 00 03 4c 5f 39 02 d0 07 34 02 00 00 50 01 00"+
+		" fd 08 02 fd 08 00 00 03 44 5f 31 04 40 1f 67 0e 00 00 50 01 00"+
+		" 01 01")
+	want := game.Servers{List: []game.Server{
+		{ID: 1301, Name: "L_1", Faction: 1, Mask: 1, Status: game.StatusRestricted, Players: 3245, Capacity: 7500},
+		{ID: 1309, Name: "L_9", Faction: 1, Mask: 1, Status: game.StatusRecommended, Players: 564, Capacity: 2000},
+		{ID: 2301, Name: "D_1", Faction: 2, Mask: 1, Status: game.StatusRestricted, Players: 3687, Capacity: 8000},
+	}}
+	e, err := game.Parse(wire.Frame{Opcode: 0x3909, Payload: payload})
+	if err != nil || !reflect.DeepEqual(e, want) {
+		t.Fatalf("got %#v, %v; want %#v", e, err, want)
+	}
+	if s := fmt.Sprint(e.(game.Servers).List); s != "[1301:L_1 3245/7500 restricted 1309:L_9 564/2000 recommended 2301:D_1 3687/8000 restricted]" {
+		t.Errorf("printed %s", s)
+	}
+}
+
+func TestParseCharacters(t *testing.T) {
+	fs := frames(t, "testdata/characters.bin")
+	if len(fs) != 1 {
+		t.Fatalf("%d frames, want 1", len(fs))
+	}
+
+	e, err := game.Parse(fs[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	list := e.(game.Characters).List
+	if len(list) != 17 {
+		t.Fatalf("%d characters, want 17", len(list))
+	}
+
+	for _, tt := range []struct {
+		i    int
+		want game.Character
+	}{
+		{0, game.Character{Server: 1301, Name: "Axxx", Level: 3, Code: 6, Flags: 1, Time: time.Date(2026, time.October, 1, 19, 1, 32, 417e6, time.UTC)}},
+		{1, game.Character{Server: 1301, Name: "Bxx", Level: 3, Code: 17, Flags: 1, Time: time.Date(2026, time.October, 1, 18, 58, 49, 923e6, time.UTC)}}, // after the first mask byte
+		{6, game.Character{Server: 1303, Name: "Axxx", Level: 29, Exp: 3016813, Code: 14, Flags: 1, Time: time.Date(2026, time.October, 2, 18, 16, 3, 743e6, time.UTC)}},
+		{16, game.Character{Server: 2307, Name: "$qqqqqqqqqqq", Level: 1, Code: 44, Flags: 2, Time: time.Date(2026, time.October, 1, 17, 48, 19, 820e6, time.UTC)}},
+	} {
+		if got := list[tt.i]; !reflect.DeepEqual(got, tt.want) {
+			t.Errorf("character %d: got %#v\nwant %#v", tt.i, got, tt.want)
+		}
+	}
+}
+
+func characters(cs []game.Character) []byte {
+	b := []byte{0, 0, byte(len(cs))}
+
+	for i, c := range cs {
+		b = binary.LittleEndian.AppendUint16(b, c.Server)
+		b = append(append(b, byte(len(c.Name))), c.Name...)
+		for _, v := range []uint32{c.Level, c.Exp, 0, c.Code} {
+			b = binary.LittleEndian.AppendUint32(b, v)
+		}
+		b = append(b, c.Flags)
+		b = binary.LittleEndian.AppendUint64(b, uint64(c.Time.UnixMilli()))
+		b = append(b, make([]byte, 8)...)
+
+		if i%4 == 0 {
+			var mask byte
+			for k, c := range cs[i:min(i+4, len(cs))] {
+				mask |= c.Mask << (2 * k)
+			}
+			b = append(b, mask)
+		}
+	}
+	return append(b, 1, 1)
+}
+
+func TestParseCharactersShapes(t *testing.T) {
+	at := time.Date(2026, time.October, 1, 12, 0, 0, 0, time.UTC)
+	var (
+		a     = game.Character{Server: 1301, Name: "Abcd", Level: 3, Code: 6, Flags: 1, Time: at}
+		odd   = game.Character{Server: 1301, Name: "Bxxx", Level: 1, Code: 9, Flags: 3, Time: time.UnixMilli(0).UTC()}
+		dark4 = game.Character{Server: 2304, Name: "Abcdefgh", Level: 1, Code: 6, Flags: 1, Time: at} // 2304 is 00 09
+		kor   = game.Character{Server: 1302, Name: "누리", Level: 2, Code: 5, Flags: 1, Time: at}
+		long  = game.Character{Server: 1303, Name: strings.Repeat("가", 11), Level: 4, Code: 7, Flags: 1, Time: at}
+		none  = game.Character{Server: 2304, Level: 1, Code: 6, Flags: 1, Time: at}
+		bits  = game.Character{Server: 1305, Name: "Cc", Level: 1, Code: 6, Flags: 1, Time: at, Mask: 2}
+	)
+	for _, tt := range []struct {
+		name  string
+		chars []game.Character
+	}{
+		{"none", nil},
+		{"one", []game.Character{a}},
+		{"odd flags and time", []game.Character{a, odd}},
+		{"a server ending in 00 after the mask", []game.Character{a, dark4}},
+		{"a server ending in 00 first", []game.Character{dark4, a}},
+		{"a name in hangul", []game.Character{a, kor}},
+		{"a name of 33 bytes", []game.Character{a, long, a}},
+		{"an empty name on a server ending in 00", []game.Character{a, none}},
+		{"a second group of one", []game.Character{a, kor, odd, long, dark4}},
+		{"bits in the masks", []game.Character{bits, a, bits, a, a, bits}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			e, err := game.Parse(wire.Frame{Opcode: 0x390B, Payload: characters(tt.chars)})
+			if want := (game.Characters{List: append([]game.Character{}, tt.chars...)}); err != nil || !reflect.DeepEqual(e, want) {
+				t.Errorf("got %v, %v\nwant %v", e, err, want)
+			}
+		})
+	}
+}
+
+func TestRedirectAddr(t *testing.T) {
+	for _, tt := range []struct {
+		payload string
+		host    string
+		addr    string // "" when Addr fails
+	}{
+		{"00 00 18 05 07 31 2e 32 2e 33 2e 34 10 34", "1.2.3.4", "1.2.3.4:13328"},
+		{"00 00 18 05 03 61 62 63 10 34", "abc", ""},
+	} {
+		e, err := game.Parse(wire.Frame{Opcode: 0x390F, Payload: unhex(t, tt.payload)})
+		d, _ := e.(game.Redirect)
+		if err != nil || d.Host != tt.host || d.Port != 13328 || d.Server != 1304 {
+			t.Errorf("%s: got %+v, %v", tt.host, e, err)
+			continue
+		}
+		if a, ok := d.Addr(); ok != (tt.addr != "") || ok && a.String() != tt.addr {
+			t.Errorf("%s: Addr %v, %v; want %q", tt.host, a, ok, tt.addr)
+		}
+	}
+}
+
 // reject is a frame Parse refuses, and with which error.
 type reject struct {
 	name    string
@@ -124,6 +257,24 @@ func TestParseRejects(t *testing.T) {
 		{"name check without its trailing 01", 0x361A, "00 00 02 48 65", game.ErrLayout},
 		{"name check whose trailer is not 01", 0x361A, "00 00 02 48 65 02", game.ErrLayout},
 		{"name check with a byte too many", 0x361A, "00 00 02 48 65 01 00", game.ErrLayout},
+		{"servers cut short in a server", 0x3909, "00 00 01 15 05 01 15 05 00 00", game.ErrLayout},
+		{"servers whose second ID is not the first", 0x3909, "00 00 01 15 05 01 16 05 00 00 01 41 01 00 58 1b 46 09 00 00 50 01 00 01 01", game.ErrLayout},
+		{"servers without its trailer", 0x3909, "00 00 01 15 05 01 15 05 00 00 01 41 01 00 58 1b 46 09 00 00 50 01 00", game.ErrLayout},
+		{"account cut short", 0x3906, "00 00 00 02 41 42 01 00 00", game.ErrLayout},
+		{"account whose first byte is not 0", 0x3906, "01 00 00 01 41 01 00 00 01 42 17 05 01 00 00 00 00 17 05 03 09 03", game.ErrLayout},
+		{"characters cut short in a character", 0x390B, "00 00 01 15 05 01 41 03 00 00 00", game.ErrLayout},
+		{"characters without its trailer", 0x390B, "00 00 01 15 05 01 41 03 00 00 00 00 00 00 00 00 00 00 00 06 00 00 00 01 81 e0 d7 f8 a0 01 00 00 00 00 00 00 00 00 00 00 00", game.ErrLayout},
+		{"account whose Server is not repeated", 0x3906, "00 00 00 01 41 01 00 00 03 31 3a 42 17 05 01 00 00 00 00 18 05 03 09 03", game.ErrLayout},
+		{"account whose ID has no colon", 0x3906, "00 00 00 01 41 01 00 00 01 42 17 05 01 00 00 00 00 17 05 03 09 03", game.ErrLayout},
+		{"characters whose trailer is not 01 01", 0x390B, "00 00 00 01 02", game.ErrLayout},
+		{"characters on server 0", 0x390B, "00 00 01 00 00 01 41 03 00 00 00 00 00 00 00 00 00 00 00 06 00 00 00 01 81 e0 d7 f8 a0 01 00 00 00 00 00 00 00 00 00 00 00 01 01", game.ErrLayout},
+		{"servers whose trailer is not 01 01", 0x3909, "00 00 00 01 00", game.ErrLayout},
+		{"servers whose mask has bits past the end", 0x3909, "00 00 01 15 05 01 15 05 00 00 01 41 05 00 58 1b 46 09 00 00 50 01 00 01 01", game.ErrLayout},
+		{"characters without the mask", 0x390B, "00 00 01 15 05 01 41 03 00 00 00 00 00 00 00 00 00 00 00 06 00 00 00 01 81 e0 d7 f8 a0 01 00 00 00 00 00 00 00 00 00 00 01 01", game.ErrLayout},
+		{"characters whose mask has bits past the end", 0x390B, "00 00 01 15 05 01 41 03 00 00 00 00 00 00 00 00 00 00 00 06 00 00 00 01 81 e0 d7 f8 a0 01 00 00 00 00 00 00 00 00 00 00 04 01 01", game.ErrLayout},
+		{"redirect to no host", 0x390F, "00 00 18 05 00 10 34", game.ErrLayout},
+		{"redirect without a port", 0x390F, "00 00 18 05 07 31 2e 32 2e 33 2e 34", game.ErrLayout},
+		{"redirect with a byte too many", 0x390F, "00 00 18 05 07 31 2e 32 2e 33 2e 34 10 34 00", game.ErrLayout},
 		{"varint over five bytes", 0x3642, "ff ff ff ff ff ff 00 03", game.ErrLayout},
 		{"an opcode met but not read", 0x3805, "c7 7c 02 f5 a3 02 00 e0 26 a8 00 24", game.ErrUnread},
 	}

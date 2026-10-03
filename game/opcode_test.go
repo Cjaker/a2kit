@@ -10,3 +10,25 @@ func TestReadsKnown(t *testing.T) {
 		}
 	}
 }
+
+func TestPrivate(t *testing.T) {
+	for _, name := range []string{"Login", "Account", "Characters"} {
+		found := false
+		for op, o := range opcodes {
+			if o.name == name {
+				found = true
+				if !Private(op) {
+					t.Errorf("%v %s is not private", op, name)
+				}
+			}
+		}
+		if !found {
+			t.Errorf("no opcode named %s", name)
+		}
+	}
+	for op := range private {
+		if opcodes[op].name == "" {
+			t.Errorf("%v is private, and not in the table", op)
+		}
+	}
+}

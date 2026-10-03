@@ -2,6 +2,7 @@ package game
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/nuriland/a2kit/wire"
@@ -196,6 +197,137 @@ func nameCheck(r *reader) Event {
 	r.end()
 	n.Taken = n.Code != 0
 	return n
+}
+
+// servers parses the lobby's server list from a frame
+func servers(r *reader) Event {
+	if r.u16() != 0 {
+		r.bad = true
+	}
+	var (
+		s    = Servers{List: make([]Server, r.u8())}
+		mask byte
+	)
+	for i := range s.List {
+		v := Server{ID: r.u16(), Faction: r.u8()}
+		if r.u16() != v.ID || r.u16() != 0 {
+			r.bad = true // the ID twice, then 00 00
+		}
+
+		v.Name = r.name()
+		v.Mask = groupBits(r, i, len(s.List), &mask)
+		v.Status = r.u8()
+		v.Capacity = r.u16()
+		v.Players = r.u32()
+
+		r.skip(3)
+
+		s.List[i] = v
+	}
+	if r.u16() != 0x0101 {
+		r.bad = true // 01 01 so far
+	}
+	r.end()
+
+	return s
+}
+
+// redirect parses the lobby's hand off to a world server from a frame
+func redirect(r *reader) Event {
+	if r.u16() != 0 {
+		r.bad = true
+	}
+	d := Redirect{Server: r.u16(), Host: r.name(), Port: r.u16()}
+	if d.Host == "" {
+		r.bad = true
+	}
+	r.end()
+	return d
+}
+
+// account parses who logged in to the lobby from a frame
+func account(r *reader) Event {
+	if r.u16() != 0 || r.u8() != 0 {
+		r.bad = true
+	}
+	var a Account
+	a.Session[0] = r.name()
+
+	r.skip(3) // 01 00 00 so far
+
+	// The account's number, then the other GUID
+	id, session, ok := strings.Cut(r.name(), ":")
+	if !ok {
+		r.bad = true
+	}
+	a.ID, a.Session[1] = id, session
+	a.Server = r.u16()
+	r.skip(5) // 01, then a u32 0 so far
+	if r.u16() != a.Server {
+		r.bad = true
+	}
+
+	r.skip(3) // 03 09 03 so far
+	r.end()
+
+	return a
+}
+
+// characters parses the account's characters from a frame
+func characters(r *reader) Event {
+	if r.u16() != 0 {
+		r.bad = true
+	}
+	var (
+		c    = Characters{List: make([]Character, r.u8())}
+		mask byte
+	)
+	for i := range c.List {
+		ch := Character{Server: r.u16(), Name: r.name(), Level: r.u32(), Exp: r.u32()}
+
+		if r.u32() != 0 || ch.Server == 0 || len(ch.Name) > 0 && ch.Name[0] < 0x20 {
+			r.bad = true // a check on the layout
+		}
+
+		ch.Code = r.u32()
+		ch.Flags = r.u8()
+		ch.Time = unixMilli(int64(r.u64()))
+
+		r.skip(8) // 0 so far
+
+		ch.Mask = groupBits(r, i, len(c.List), &mask)
+		c.List[i] = ch
+	}
+	if r.u16() != 0x0101 {
+		r.bad = true // 01 01 so far
+	}
+	r.end()
+
+	return c
+}
+
+// groupBits returns the two bits that entry i of a list of n has in its group's mask.
+//
+// The lists in Servers and Characters split their entries into groups of four,
+// and the first entry of each group carries one mask byte for the whole group
+func groupBits(r *reader, i, n int, mask *byte) byte {
+	if i%4 == 0 {
+		*mask = r.u8()
+		if left := n - i; left < 4 && *mask>>(2*left) != 0 {
+			r.bad = true // bits for entries past the end
+		}
+	}
+	return *mask >> (2 * (i % 4)) & 3
+}
+
+// lobbyPing parses the lobby's answer to a ping from a frame
+func lobbyPing(r *reader) Event {
+	if r.u16() != 0 {
+		r.bad = true
+	}
+	p := LobbyPing{Client: r.u64(), Server: unixMilli(int64(r.u64()))}
+	r.end()
+	return p
 }
 
 // unixMilli converts a Unix milliseconds timestamp to a time.Time in UTC.

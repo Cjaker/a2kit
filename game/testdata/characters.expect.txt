@@ -1,0 +1,1 @@
+0B 39 game.Characters {List:[1301:Axxx/3 1301:Bxx/3 1302:Bxx/1 1302:Axxx/1 1303:$eeeeeeeeeee/1 1303:Fxxxx/7 1303:Axxx/29 1303:Hx/1 1303:Bxx/10 1305:Bxx/1 1305:Kxxx/1 1306:Bxx/1 1307:Kxxx/1 1307:Bxx/1 1309:Oxx/1 1309:Kxxx/1 2307:$qqqqqqqqqqq/1]}
