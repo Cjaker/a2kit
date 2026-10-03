@@ -330,6 +330,96 @@ func TestLockHandover(t *testing.T) {
 	}
 }
 
+func TestLobbyHandover(t *testing.T) {
+	var (
+		d      = NewDecoder(Config{})
+		lobby  = netip.MustParseAddrPort("10.0.0.3:13700")
+		world  = srv
+		at     = func(ms int) time.Time { return epoch.Add(time.Duration(ms) * time.Millisecond) }
+		served = slices.Concat(
+			wiretest.AppendFrame(nil, 0x01, 0x39, 270), // the handshake
+			wiretest.AppendFrame(nil, 0x06, 0x39, 99),
+			wiretest.AppendFrame(nil, 0x09, 0x39, 577), // the servers: three known frames lock
+		)
+		redirect = wiretest.AppendFrame(nil, 0x0F, 0x39, 21)
+		tick     = wiretest.AppendFrame(nil, 0x00, 0x36, 8)
+	)
+	d.FeedSegment(Segment{Time: at(0), Src: lobby, Dst: cli, Seq: 1, Flags: ACK, Payload: served})
+	if d.srv == nil || d.srv.key.src != lobby {
+		t.Fatal("not locked on the lobby")
+	}
+
+	hello := wiretest.AppendFrame(nil, 0x00, 0x39, 270)
+	d.FeedSegment(Segment{Time: at(5), Src: cli, Dst: lobby, Seq: 1, Flags: ACK, Payload: hello})
+	d.FeedSegment(Segment{Time: at(10), Src: cli, Dst: lobby, Seq: 1 + uint32(len(hello)), Flags: FIN | ACK})
+	d.FeedSegment(Segment{Time: at(11), Src: lobby, Dst: cli, Seq: 1 + uint32(len(served)), Flags: ACK, Payload: slices.Repeat(redirect, 3)}) // after the client's FIN, and never a lock again
+	d.FeedSegment(Segment{Time: at(20), Src: world, Dst: cli, Seq: 1, Flags: ACK, Payload: slices.Concat(wiretest.AppendFrame(nil, 0x11, 0x36, 272), tick, tick, tick)})
+	expectDir(t, d, "01 39 len=270 server\n06 39 len=99 server\n09 39 len=577 server\n"+
+		strings.Repeat("0F 39 len=21 server\n", 3)+
+		"11 36 len=272 server\n00 36 len=8 server\n00 36 len=8 server\n00 36 len=8 server\n")
+
+	if d.srv == nil || d.srv.key.src != world {
+		t.Fatal("not locked on the world server")
+	}
+
+	want := Stats{Locked: true, Locks: 2, Server: world, Client: cli}
+	if s := d.Stats(); s != want {
+		t.Errorf("stats %+v, want %+v", s, want)
+	}
+}
+
+func TestLetGoSweepsPair(t *testing.T) {
+	var (
+		d    = NewDecoder(Config{})
+		tick = wiretest.AppendFrame(nil, 0x00, 0x36, 8)
+		p    = slices.Repeat(tick, 3)
+	)
+	d.FeedSegment(segment(1, ACK, p, 0))
+	d.FeedSegment(Segment{Time: epoch, Src: cli, Dst: srv, Seq: 1, Flags: ACK, Payload: tick})
+	d.FeedSegment(segment(1+uint32(len(p)), FIN|ACK, nil, time.Second))
+	if d.srv != nil {
+		t.Fatal("still locked after the server's FIN")
+	}
+	if d.closing != 2 {
+		t.Errorf("%d streams closing, want both sides", d.closing)
+	}
+	d.Feed(epoch.Add(time.Second+closeGrace), netip.MustParseAddrPort("10.0.0.9:7777"), cli, []byte{1}) // anything, to sweep
+	if len(d.streams) != 1 || d.closing != 0 {
+		t.Errorf("%d streams and %d closing after the grace, want only the new one", len(d.streams), d.closing)
+	}
+}
+
+func TestLetGoInSequence(t *testing.T) {
+	var (
+		tick  = wiretest.AppendFrame(nil, 0x00, 0x36, 8)
+		p     = slices.Repeat(tick, 3)
+		other = netip.MustParseAddrPort("10.0.0.9:27500")
+	)
+	for _, tt := range []struct {
+		name   string
+		seg    Segment
+		silent bool
+	}{
+		{"stray RST", Segment{Time: epoch, Src: cli, Dst: srv, Seq: 999999, Flags: RST}, false},
+		{"FIN past a gap", Segment{Time: epoch, Src: srv, Dst: cli, Seq: 100 + uint32(len(p)), Flags: FIN | ACK}, false},
+		{"RST on a silent side", Segment{Time: epoch, Src: cli, Dst: srv, Seq: 5, Flags: RST}, true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			d := NewDecoder(Config{})
+			d.FeedSegment(segment(1, ACK, p, 0))
+			if !tt.silent {
+				d.FeedSegment(Segment{Time: epoch, Src: cli, Dst: srv, Seq: 1, Flags: ACK, Payload: tick})
+			}
+			frames(d)
+			d.FeedSegment(tt.seg)
+			d.FeedSegment(Segment{Time: epoch, Src: other, Dst: cli, Seq: 1, Flags: ACK, Payload: p})
+			if d.srv == nil || d.srv.key.src != srv {
+				t.Fatal("the lock moved off the game")
+			}
+		})
+	}
+}
+
 func TestEmitClient(t *testing.T) {
 	d := NewDecoder(Config{EmitClient: true})
 	feed(d, slices.Concat(wiretest.AppendFrame(nil, 0x04, 0x38, 10), wiretest.AppendFrame(nil, 0x05, 0x38, 10)))

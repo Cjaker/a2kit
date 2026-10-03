@@ -105,11 +105,15 @@ func (d *Decoder) FeedSegment(s Segment) {
 		}
 		st.closed = s.Time
 	}
+	seen := st.synced
 	if !st.synced {
 		st.synced, st.next = true, seq
 	}
 	if len(s.Payload) > 0 {
 		d.place(st, seq, s.Payload, s.Time)
+	}
+	if d.srv != nil && seen && s.Flags&(FIN|RST) != 0 && st.next == seq+uint32(len(s.Payload)) {
+		d.letGo(st, s.Time)
 	}
 }
 
@@ -242,6 +246,9 @@ func (d *Decoder) admit(k key, t time.Time) bool {
 
 // hunt counts a frame toward the lock, and locks on its stream once it has earned it.
 func (d *Decoder) hunt(st *stream, op Opcode, flags Flags) {
+	if st.dir != 0 {
+		return
+	}
 	if flags&Resynced != 0 {
 		st.frames = 0
 	}
@@ -289,6 +296,17 @@ func (d *Decoder) queueEarly(st *stream) {
 		}
 	}
 	st.early, st.earlyBytes = nil, 0
+}
+
+// letGo ends the lock when one side of its pair closes, as the lobby's does when it hands the
+// client to a world server, and hunts at once.
+func (d *Decoder) letGo(st *stream, t time.Time) {
+	d.log.Info("flow closed, hunting", "src", st.key.src, "dst", st.key.dst)
+	d.srv = nil
+	if peer := d.streams[st.key.reverse()]; peer != nil && peer.closed.IsZero() {
+		peer.closed = t
+		d.closing++
+	}
 }
 
 // unlock resets the decoder to hunting
