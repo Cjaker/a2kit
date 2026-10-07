@@ -23,7 +23,7 @@ type Analysis struct {
 	Server, Client netip.AddrPort
 
 	Pairs       int           // server and client pairs the decoder locked on
-	Start       time.Time     // the pair's first message, which a2k show counts from
+	Start       time.Time     // the recording's first message, which a2k show counts from
 	First, Last time.Time     // the pair's first and last message or client packet
 	Messages    []Message     // the server's, by time
 	Packets     int           // the client's packets that carried data
@@ -72,13 +72,12 @@ func Analyze(name string, cfg Config) (*Analysis, error) {
 		}
 	}
 
-	var a = &Analysis{Server: srv.src, Client: srv.dst, Pairs: len(locked), Summary: r.Summary()}
+	var a = &Analysis{Server: srv.src, Client: srv.dst, Pairs: len(locked), Start: all[0].Time, Summary: r.Summary()}
 	for _, m := range all {
 		if (flow{m.Src, m.Dst, m.IfIndex}) == srv {
 			a.Messages = append(a.Messages, m)
 		}
 	}
-	a.Start = a.Messages[0].Time // before sorting: the first message, as a2k show counts from it
 	slices.SortStableFunc(a.Messages, func(x, y Message) int { return x.Time.Compare(y.Time) })
 
 	var back = flow{srv.dst, srv.src, srv.ifIndex}
@@ -255,7 +254,7 @@ func (a *Analysis) Types(marks []time.Time, window time.Duration) []TypeStat {
 // windows merges the marks' windows where they overlap, so that a message counts once.
 func windows(marks []time.Time, window time.Duration) [][2]time.Time {
 	var out [][2]time.Time
-	for _, m := range marks {
+	for _, m := range slices.SortedFunc(slices.Values(marks), time.Time.Compare) {
 		if n := len(out); n > 0 && !m.After(out[n-1][1]) {
 			out[n-1][1] = m.Add(window)
 			continue
