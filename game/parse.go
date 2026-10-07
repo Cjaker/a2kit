@@ -11,9 +11,6 @@ import (
 // Event is what one frame means, like a hit, a cast, a spawn, a death, a position update, or a clock tick.
 type Event interface{ event() }
 
-// dotnetEpoch is 0001-01-01 UTC in Unix milliseconds, the epoch of the client's clock.
-const dotnetEpoch = -62135596800000
-
 // Parse reads what f means, or fails with ErrUnread or ErrLayout.
 func Parse(f wire.Frame) (Event, error) {
 	if f.Flags&wire.FromClient != 0 {
@@ -174,7 +171,7 @@ func tick(r *reader) Event {
 // ping parses a ping event from a frame
 func ping(r *reader) Event {
 	r.skip(2) // 00 00
-	p := Ping{Client: unixMilli(int64(r.u64()) + dotnetEpoch), Server: unixMilli(int64(r.u64()))}
+	p := Ping{Client: r.u64(), Server: unixMilli(int64(r.u64()))}
 	r.end()
 	return p
 }

@@ -7,10 +7,10 @@ type Tick struct {
 	Server time.Time
 }
 
-// Ping answers the client's ping, from 03 36, with the client's send time and the server's clock.
-// The difference from arrival gives the round trip.
+// Ping answers the client's ping with the client's clock sent back and the server's clock.
 type Ping struct {
-	Client, Server time.Time
+	Client uint64 // milliseconds on the client's clock
+	Server time.Time
 }
 
 func (Tick) event() {}
