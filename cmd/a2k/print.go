@@ -197,7 +197,11 @@ func finish(o *options, r *a2kit.Reader, out *output, err error) error {
 		fmt.Fprintln(o.stderr, "a2k:", strings.ReplaceAll(sum.Lost.Error(), "\n", "\na2k: "))
 	}
 
-	summarize(o.stderr, r.Source, r.Log, sum, err)
+	src := r.Source
+	if o.file != "" {
+		src.Path = o.file // the file read, not where a log says its frames came from
+	}
+	summarize(o.stderr, src, r.Log, sum, err)
 	return err
 }
 

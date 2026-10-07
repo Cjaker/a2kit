@@ -11,6 +11,7 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -36,6 +37,7 @@ type options struct {
 	dur     time.Duration // live: stop after this long
 	account bool          // keep Login, Account and Characters in a file to share
 
+	file    string         // the FILE read as given for the summary
 	closers []func() error // what the command opened beside the Reader, in the order to close it
 }
 
@@ -95,6 +97,10 @@ func (o *options) records() slog.Handler {
 // open reads FILE: a recording or a log, stdin for "-", or with -stream the bare stream a server
 // sends.
 func (o *options) open(name string) (*a2kit.Reader, error) {
+	o.file = name
+	if name == "-" {
+		o.file = "stdin"
+	}
 	switch {
 	case o.stream:
 		return openStream(o, name)
@@ -118,11 +124,15 @@ func (o *options) capture() (*a2kit.Reader, error) {
 	if o.dur > 0 {
 		ctx, cancel = context.WithTimeout(ctx, o.dur)
 	}
+
+	var over atomic.Bool // the command ended on its own, not a stop
 	context.AfterFunc(ctx, func() {
 		stop()
-		fmt.Fprintln(o.stderr, "a2k: stopping the capture")
+		if !over.Load() {
+			fmt.Fprintln(o.stderr, "a2k: stopping the capture")
+		}
 	})
-	o.closers = append(o.closers, func() error { cancel(); stop(); return nil })
+	o.closers = append(o.closers, func() error { over.Store(true); cancel(); stop(); return nil })
 
 	cfg := o.config()
 	if o.pcap != "" {
@@ -135,7 +145,11 @@ func (o *options) capture() (*a2kit.Reader, error) {
 	}
 	r, err := a2kit.Capture(ctx, o.adapter, cfg)
 	if err != nil {
-		return nil, errors.Join(err, o.close())
+		err = errors.Join(err, o.close())
+		if o.pcap != "" {
+			os.Remove(o.pcap) // nothing of the session is in it
+		}
+		return nil, err
 	}
 	return r, nil
 }
